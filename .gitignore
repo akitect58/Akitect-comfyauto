@@ -14,9 +14,9 @@ dist/
 .env.production.local
 backend/outputs/
 backend/assets/temp/
-backend/config.json
+#backend/config.json
 backend/__pycache__/
 *.pyc
 .venv/
-env/
+#env/
 venv/

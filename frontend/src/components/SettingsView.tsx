@@ -8,10 +8,17 @@ type Settings = {
     openai_api_key_masked: string;
     openai_api_key_set: boolean;
     comfyui_path: string;
+    use_reference_image: boolean;
     prompts: {
+        protagonist_prompt: string;
         draft_generation: string;
         story_confirmation: string;
+        single_cut_regeneration: string;
+        master_character: string;
+        scene_image: string;
+        veo_video: string;
         title_generation: string;
+        negative_prompt: string;
     };
 };
 
@@ -20,17 +27,40 @@ export default function SettingsView() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [activeTab, setActiveTab] = useState<'connection' | 'prompts'>('connection');
 
     // Form state
     const [apiKey, setApiKey] = useState('');
     const [comfyuiPath, setComfyuiPath] = useState('');
+    const [protagonistPrompt, setProtagonistPrompt] = useState('');
     const [draftPrompt, setDraftPrompt] = useState('');
     const [storyPrompt, setStoryPrompt] = useState('');
+    const [singleCutPrompt, setSingleCutPrompt] = useState('');
+    const [masterCharPrompt, setMasterCharPrompt] = useState('');
+    const [sceneImagePrompt, setSceneImagePrompt] = useState('');
+    const [veoVideoPrompt, setVeoVideoPrompt] = useState('');
     const [titlePrompt, setTitlePrompt] = useState('');
+    const [negativePrompt, setNegativePrompt] = useState('');
+    const [useReferenceImage, setUseReferenceImage] = useState(true);
+    const [selectedModel, setSelectedModel] = useState('');
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
 
     useEffect(() => {
         fetchSettings();
+        fetchModels();
     }, []);
+
+    const fetchModels = async () => {
+        try {
+            const res = await fetch('http://localhost:3501/api/settings/models');
+            const data = await res.json();
+            if (data.models) {
+                setAvailableModels(data.models);
+            }
+        } catch (e) {
+            console.error("Failed to fetch models:", e);
+        }
+    };
 
     const fetchSettings = async () => {
         setIsLoading(true);
@@ -39,11 +69,28 @@ export default function SettingsView() {
             const data = await res.json();
             setSettings(data);
             setComfyuiPath(data.comfyui_path || '');
+            setProtagonistPrompt(data.prompts?.protagonist_prompt || '');
             setDraftPrompt(data.prompts?.draft_generation || '');
             setStoryPrompt(data.prompts?.story_confirmation || '');
+            setSingleCutPrompt(data.prompts?.single_cut_regeneration || '');
+            setMasterCharPrompt(data.prompts?.master_character || '');
+            setSceneImagePrompt(data.prompts?.scene_image || '');
+            setVeoVideoPrompt(data.prompts?.veo_video || '');
             setTitlePrompt(data.prompts?.title_generation || '');
+            setNegativePrompt(data.prompts?.negative_prompt || '');
+            setNegativePrompt(data.prompts?.negative_prompt || '');
+            setUseReferenceImage(data.use_reference_image !== false);
+            setSelectedModel(data.selected_model || '');
         } catch (e) {
             console.error("Failed to fetch settings:", e);
+            // Even on error, stop loading so user is not stuck
+            setSettings({
+                openai_api_key_masked: '',
+                openai_api_key_set: false,
+                comfyui_path: '',
+                use_reference_image: true,
+                prompts: {} as any
+            });
         } finally {
             setIsLoading(false);
         }
@@ -56,13 +103,21 @@ export default function SettingsView() {
             const payload: any = {
                 comfyui_path: comfyuiPath,
                 prompts: {
+                    protagonist_prompt: protagonistPrompt,
                     draft_generation: draftPrompt,
                     story_confirmation: storyPrompt,
-                    title_generation: titlePrompt
+                    single_cut_regeneration: singleCutPrompt,
+                    master_character: masterCharPrompt,
+                    scene_image: sceneImagePrompt,
+                    veo_video: veoVideoPrompt,
+                    title_generation: titlePrompt,
+                    negative_prompt: negativePrompt
                 }
             };
 
-            // Only include API key if it was changed
+            payload.use_reference_image = useReferenceImage;
+            payload.selected_model = selectedModel;
+
             if (apiKey) {
                 payload.openai_api_key = apiKey;
             }
@@ -75,8 +130,8 @@ export default function SettingsView() {
             const data = await res.json();
             if (data.success) {
                 setSaveStatus('success');
-                setApiKey(''); // Clear the input after save
-                fetchSettings(); // Refresh to get masked key
+                setApiKey('');
+                fetchSettings();
                 setTimeout(() => setSaveStatus('idle'), 3000);
             } else {
                 setSaveStatus('error');
@@ -97,7 +152,7 @@ export default function SettingsView() {
     }
 
     return (
-        <div className="p-8 space-y-8 max-w-4xl mx-auto">
+        <div className="p-8 space-y-6 max-w-4xl mx-auto">
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-black text-white mb-1">설정 (Settings)</h2>
@@ -107,8 +162,8 @@ export default function SettingsView() {
                     onClick={saveSettings}
                     disabled={isSaving}
                     className={`px-6 py-3 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${saveStatus === 'success' ? 'bg-green-600 text-white' :
-                            saveStatus === 'error' ? 'bg-red-600 text-white' :
-                                'bg-blue-600 hover:bg-blue-500 text-white'
+                        saveStatus === 'error' ? 'bg-red-600 text-white' :
+                            'bg-blue-600 hover:bg-blue-500 text-white'
                         }`}
                 >
                     {isSaving ? (
@@ -123,127 +178,270 @@ export default function SettingsView() {
                 </button>
             </div>
 
-            {/* API & Path Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6"
-            >
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Icon icon="solar:key-minimalistic-bold" className="text-blue-500" />
-                    연결 설정
-                </h3>
+            {/* Tab Buttons */}
+            <div className="flex gap-2">
+                <button
+                    onClick={() => setActiveTab('connection')}
+                    className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'connection' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                >
+                    <Icon icon="solar:plug-circle-bold" className="inline mr-2" />연결 설정
+                </button>
+                <button
+                    onClick={() => setActiveTab('prompts')}
+                    className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'prompts' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                >
+                    <Icon icon="solar:document-text-bold" className="inline mr-2" />AI 프롬프트
+                </button>
+            </div>
 
-                {/* OpenAI API Key */}
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <Icon icon="simple-icons:openai" /> OpenAI API Key
-                        {settings?.openai_api_key_set && (
-                            <span className="text-green-500 text-[10px] bg-green-500/10 px-2 py-0.5 rounded">설정됨</span>
-                        )}
-                    </label>
-                    <div className="flex gap-3">
+            {/* Connection Tab */}
+            {activeTab === 'connection' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6"
+                >
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Icon icon="solar:key-minimalistic-bold" className="text-blue-500" />
+                        연결 설정
+                    </h3>
+
+                    {/* OpenAI API Key */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <Icon icon="simple-icons:openai" /> OpenAI API Key
+                            {settings?.openai_api_key_set && (
+                                <span className="text-green-500 text-[10px] bg-green-500/10 px-2 py-0.5 rounded">설정됨</span>
+                            )}
+                        </label>
                         <input
                             type="password"
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
                             placeholder={settings?.openai_api_key_set ? `현재: ${settings.openai_api_key_masked}` : "sk-..."}
-                            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
+                        />
+                        <p className="text-[10px] text-slate-500">새 키를 입력하면 기존 키가 덮어씌워집니다.</p>
+                    </div>
+
+                    {/* ComfyUI Path & Model Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <Icon icon="solar:folder-bold" /> ComfyUI 설치 경로
+                            </label>
+                            <input
+                                type="text"
+                                value={comfyuiPath}
+                                onChange={(e) => setComfyuiPath(e.target.value)}
+                                placeholder="C:\ComfyUI_windows_portable\ComfyUI"
+                                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                            />
+                        </div>
+
+                        {/* Model Selection */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <Icon icon="solar:box-minimalistic-bold" /> 기본 모델 (Checkpoint)
+                            </label>
+                            <div className="relative">
+                                <select
+                                    value={selectedModel}
+                                    onChange={(e) => setSelectedModel(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none"
+                                >
+                                    <option value="" disabled>모델 선택...</option>
+                                    {availableModels.length > 0 ? (
+                                        availableModels.map((model) => (
+                                            <option key={model} value={model}>{model}</option>
+                                        ))
+                                    ) : (
+                                        <option value={selectedModel || "RealVisXL_V5.0.safetensors"}>
+                                            {selectedModel || "RealVisXL_V5.0.safetensors"} (목록 로딩 실패)
+                                        </option>
+                                    )}
+                                </select>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                                    <Icon icon="solar:alt-arrow-down-bold" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Use Reference Image Toggle */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <Icon icon="solar:gallery-bold" /> 이미지 참조 기능 (IP-Adapter)
+                        </label>
+                        <div className="flex items-center justify-between bg-slate-950 border border-slate-700 rounded-xl px-4 py-3">
+                            <div className="flex-1">
+                                <p className="text-sm text-white">첫 번째 이미지를 참조로 사용</p>
+                                <p className="text-[10px] text-slate-500">img2img를 지원하지 않는 모델을 사용할 경우 끄세요.</p>
+                            </div>
+                            <button
+                                onClick={() => setUseReferenceImage(!useReferenceImage)}
+                                className={`w-14 h-7 rounded-full transition-all relative ${useReferenceImage ? 'bg-blue-600' : 'bg-slate-700'}`}
+                            >
+                                <div
+                                    className={`absolute w-5 h-5 bg-white rounded-full top-1 transition-all ${useReferenceImage ? 'left-8' : 'left-1'}`}
+                                />
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+
+            {/* Prompts Tab */}
+            {activeTab === 'prompts' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-4"
+                >
+                    {/* Protagonist Prompt - 주인공 설정 */}
+                    <div className="bg-purple-500/5 border border-purple-500/20 rounded-2xl p-4">
+                        <label className="text-xs font-bold text-purple-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                            <Icon icon="solar:user-bold" /> 주인공 프롬프트 (모든 스토리에 적용)
+                        </label>
+                        <p className="text-xs text-slate-500 mb-3">
+                            예: 20대 중반의 한국인 여성, 긴 검은 머리카락, 따뜻한 눈빛
+                        </p>
+                        <textarea
+                            value={protagonistPrompt}
+                            onChange={(e) => setProtagonistPrompt(e.target.value)}
+                            rows={2}
+                            className="w-full bg-slate-950 border border-purple-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500 font-mono resize-none"
+                            placeholder="20대 중반의 한국인 여성, 긴 검은 머리카락, 따뜻한 눈빛, 자연스러운 메이크업, 캐주얼한 차림새"
                         />
                     </div>
-                    <p className="text-[10px] text-slate-500">새 키를 입력하면 기존 키가 덮어씌워집니다. 빈칸으로 두면 기존 키가 유지됩니다.</p>
-                </div>
 
-                {/* ComfyUI Path */}
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <Icon icon="solar:folder-bold" /> ComfyUI 설치 경로
-                    </label>
-                    <input
-                        type="text"
-                        value={comfyuiPath}
-                        onChange={(e) => setComfyuiPath(e.target.value)}
-                        placeholder="/Users/username/ComfyUI"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono"
-                    />
-                    <p className="text-[10px] text-slate-500">ComfyUI가 설치된 폴더의 전체 경로를 입력하세요.</p>
-                </div>
-            </motion.div>
+                    {/* Negative Prompt - 항상 상단에 */}
+                    <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
+                        <label className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                            <Icon icon="solar:forbidden-bold" /> 네거티브 프롬프트 (이미지 생성 시 제외할 요소)
+                        </label>
+                        <textarea
+                            value={negativePrompt}
+                            onChange={(e) => setNegativePrompt(e.target.value)}
+                            rows={3}
+                            className="w-full bg-slate-950 border border-red-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-500 font-mono resize-none"
+                            placeholder="cgi, 3d render, anime, ..."
+                        />
+                    </div>
 
-            {/* Prompts Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6"
-            >
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Icon icon="solar:document-text-bold" className="text-indigo-500" />
-                    AI 프롬프트 설정
-                </h3>
-
-                {/* Draft Generation Prompt */}
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <Icon icon="solar:magic-stick-3-bold" /> 초안 생성 프롬프트 (Step 1)
-                    </label>
-                    <textarea
+                    {/* Draft Generation */}
+                    <PromptSection
+                        icon="solar:magic-stick-3-bold"
+                        iconColor="text-amber-500"
+                        title="초안 생성 (Step 1)"
+                        description="10개의 스토리 초안을 생성할 때 사용되는 시스템 프롬프트"
                         value={draftPrompt}
-                        onChange={(e) => setDraftPrompt(e.target.value)}
-                        rows={6}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono resize-none"
-                        placeholder="초안 생성용 시스템 프롬프트..."
+                        onChange={setDraftPrompt}
                     />
-                    <p className="text-[10px] text-slate-500">10개의 스토리 초안을 생성할 때 사용되는 시스템 프롬프트입니다.</p>
-                </div>
 
-                {/* Story Confirmation Prompt */}
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <Icon icon="solar:notebook-bold" /> 스토리 확정 프롬프트 (Step 2)
-                    </label>
-                    <textarea
+                    {/* Story Confirmation */}
+                    <PromptSection
+                        icon="solar:notebook-bold"
+                        iconColor="text-blue-500"
+                        title="100컷 스토리 확정 (Step 2)"
+                        description="{{cut_count}}, {{story_title}}, {{character_tag}} 등 템플릿 변수 지원"
                         value={storyPrompt}
-                        onChange={(e) => setStoryPrompt(e.target.value)}
-                        rows={6}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono resize-none"
-                        placeholder="스토리 확정용 시스템 프롬프트..."
+                        onChange={setStoryPrompt}
                     />
-                    <p className="text-[10px] text-slate-500">{'{cuts}'} 변수를 사용하면 컷 수(100 또는 20)로 자동 치환됩니다.</p>
-                </div>
 
-                {/* Title Generation Prompt */}
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <Icon icon="solar:text-bold" /> 제목 생성 프롬프트 (Step 4)
-                    </label>
-                    <textarea
+                    {/* Single Cut Regeneration */}
+                    <PromptSection
+                        icon="solar:refresh-circle-bold"
+                        iconColor="text-rose-500"
+                        title="단일 컷 재생성"
+                        description="{{cut_number}}, {{previous_cut}}, {{next_cut}}, {{emotion_range}} 템플릿 변수 지원"
+                        value={singleCutPrompt}
+                        onChange={setSingleCutPrompt}
+                    />
+
+                    {/* Master Character */}
+                    <PromptSection
+                        icon="solar:user-circle-bold"
+                        iconColor="text-purple-500"
+                        title="마스터 캐릭터 프롬프트"
+                        description="캐릭터 외형/털/피부 질감에만 집중. 배경·행동 묘사 금지."
+                        value={masterCharPrompt}
+                        onChange={setMasterCharPrompt}
+                    />
+
+                    {/* Scene Image */}
+                    <PromptSection
+                        icon="solar:gallery-bold"
+                        iconColor="text-cyan-500"
+                        title="씬별 이미지 프롬프트"
+                        description="Pre-action 스냅샷. 조명/앵글/환경 디테일 집중."
+                        value={sceneImagePrompt}
+                        onChange={setSceneImagePrompt}
+                    />
+
+                    {/* VEO Video */}
+                    <PromptSection
+                        icon="solar:videocamera-record-bold"
+                        iconColor="text-green-500"
+                        title="VEO 3.1 영상 프롬프트"
+                        description="5요소 공식: Cinematography/Subject/Action/Context/Style"
+                        value={veoVideoPrompt}
+                        onChange={setVeoVideoPrompt}
+                    />
+
+                    {/* Title Generation */}
+                    <PromptSection
+                        icon="solar:text-bold"
+                        iconColor="text-orange-500"
+                        title="제목 생성 (Step 4)"
+                        description="영미권 콘텐츠 마케팅 스타일의 영어 제목 제안."
                         value={titlePrompt}
-                        onChange={(e) => setTitlePrompt(e.target.value)}
-                        rows={6}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono resize-none"
-                        placeholder="제목 생성용 시스템 프롬프트..."
+                        onChange={setTitlePrompt}
                     />
-                    <p className="text-[10px] text-slate-500">영어 제목을 제안할 때 사용되는 시스템 프롬프트입니다.</p>
-                </div>
-            </motion.div>
+                </motion.div>
+            )}
+        </div>
+    );
+}
 
-            {/* Info Card */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 flex items-start gap-3"
+// 프롬프트 섹션 컴포넌트
+function PromptSection({ icon, iconColor, title, description, value, onChange }: {
+    icon: string;
+    iconColor: string;
+    title: string;
+    description: string;
+    value: string;
+    onChange: (v: string) => void;
+}) {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    return (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-full p-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
             >
-                <Icon icon="solar:info-circle-bold" className="text-blue-500 text-xl shrink-0 mt-0.5" />
-                <div>
-                    <p className="text-blue-400 text-sm font-bold mb-1">실제 AI 연동 안내</p>
-                    <p className="text-blue-300/70 text-xs leading-relaxed">
-                        OpenAI API 키가 설정되면 Mock 데이터 대신 실제 GPT-4o-mini를 호출하여 스토리를 생성합니다.
-                        키가 없으면 데모용 하드코딩 데이터가 사용됩니다.
-                    </p>
+                <div className="flex items-center gap-3">
+                    <Icon icon={icon} className={`text-xl ${iconColor}`} />
+                    <div className="text-left">
+                        <div className="text-sm font-bold text-white">{title}</div>
+                        <div className="text-[10px] text-slate-500">{description}</div>
+                    </div>
                 </div>
-            </motion.div>
+                <Icon icon={isExpanded ? "solar:alt-arrow-up-bold" : "solar:alt-arrow-down-bold"} className="text-slate-500" />
+            </button>
+            {isExpanded && (
+                <div className="p-4 pt-0">
+                    <textarea
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        rows={10}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono resize-none"
+                        placeholder="시스템 프롬프트..."
+                    />
+                </div>
+            )}
         </div>
     );
 }

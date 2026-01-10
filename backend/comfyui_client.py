@@ -15,7 +15,11 @@ class ComfyUIClient:
         p = {"prompt": prompt, "client_id": self.client_id}
         data = json.dumps(p).encode('utf-8')
         req = urllib.request.Request("http://{}/prompt".format(self.server_address), data=data)
-        return json.loads(urllib.request.urlopen(req).read())
+        try:
+            return json.loads(urllib.request.urlopen(req).read())
+        except urllib.error.HTTPError as e:
+            print(f"HTTP Error {e.code}: {e.read().decode('utf-8')}")
+            raise e
 
     def get_image(self, filename, subfolder, folder_type):
         data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
@@ -25,6 +29,14 @@ class ComfyUIClient:
 
     def get_history(self, prompt_id):
         with urllib.request.urlopen("http://{}/history/{}".format(self.server_address, prompt_id)) as response:
+            return json.loads(response.read())
+
+    def get_object_info(self, node_class=None):
+        """Get object info (metadata) for a node class or all nodes"""
+        url = "http://{}/object_info".format(self.server_address)
+        if node_class:
+            url += "/{}".format(node_class)
+        with urllib.request.urlopen(url) as response:
             return json.loads(response.read())
 
     def upload_image(self, image_data, filename="reference.png", subfolder="inputs", overwrite=True):

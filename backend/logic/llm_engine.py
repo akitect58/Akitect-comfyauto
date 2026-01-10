@@ -9,10 +9,10 @@ load_dotenv()
 class LLMEngine:
     def __init__(self):
         # Using the standard openai client. 
-        # Note: 'gpt-5.2' model name is assumed based on requirements; 
+        # Note: 'gpt-5-mini-2025-08-07' model name is assumed based on requirements; 
         # in reality, it would be whatever the actual model string is (e.g., 'gpt-4o-mini' fallback if 5.2 isn't live for this key).
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = "gpt-5.2-preview" # Hypothetical model name
+        self.model = "gpt-5-mini-2025-08-07" # Hypothetical model name
 
     def generate_scenario_ideas(self, category: str, custom_prompt: Optional[str] = None) -> List[Dict[str, str]]:
         """

@@ -4,3 +4,5 @@ python-multipart>=0.0.9
 openai>=1.55.0
 python-dotenv>=1.0.0
 psutil>=5.9.0
+sse-starlette>=2.0.0
+websocket-client>=1.3.0
