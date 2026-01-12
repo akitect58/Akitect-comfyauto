@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 import base64
+import urllib.parse
 
 # Ensure backend directory is in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -2007,6 +2008,9 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                                 ]
                             )
                              veo_prompt_text = veo_resp.choices[0].message.content
+                    param_cut_ref = cuts_data[i] # Get reference to update persistent list
+                    param_cut_ref["videoPrompt"] = veo_prompt_text
+                    param_cut_ref["veo_generated"] = True
                 except Exception as e:
                     print(f"Veo Prompt Gen Error: {e}")
                     veo_prompt_text = f"Failed to generate Veo prompt: {e}"
@@ -2102,13 +2106,14 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
     cuts_data = params.get("cuts_data", [])
     
     for i, cut in enumerate(cuts_data):
-        # Find if this cut was generated
-        cut_num = cut.get("cutNumber", i+1)
-        # Try to find matching image
-        img_name = f"{cut_num:03d}.png"
-        if img_name in generated_images:
+        # Match by prefix since filename has seed: cut_{i:03d}_*.png
+        prefix = f"cut_{i:03d}_"
+        matching_img = next((img for img in generated_images if img.startswith(prefix)), None)
+        
+        if matching_img:
             cut_copy = cut.copy()
-            cut_copy["filename"] = img_name
+            cut_copy["filename"] = matching_img
+            # Ensure videoPrompt is included if generated above
             final_cuts_metadata.append(cut_copy)
 
     result_data = {

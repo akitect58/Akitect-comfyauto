@@ -443,9 +443,22 @@ export default function HistoryView() {
                                                                 <span className="text-[10px] text-indigo-400/50 italic">Not generated</span>
                                                             )}
                                                         </div>
-                                                        <p className="text-indigo-200/80 text-xs font-mono leading-relaxed select-all">
-                                                            {cutData?.videoPrompt || "Click 'VEO 3.1 데이터 생성' button above to generate."}
-                                                        </p>
+                                                        {cutData?.videoPrompt ? (
+                                                            <p className="text-indigo-200/80 text-xs font-mono leading-relaxed select-all">
+                                                                {cutData.videoPrompt}
+                                                            </p>
+                                                        ) : (
+                                                            <div className="flex flex-col items-center justify-center py-4 gap-2">
+                                                                <p className="text-indigo-300/50 text-xs mb-1">프롬프트가 없습니다.</p>
+                                                                <button
+                                                                    onClick={regenerateVeoData}
+                                                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2"
+                                                                >
+                                                                    <Icon icon="solar:magic-stick-3-bold-duotone" />
+                                                                    지금 생성하기 (Generate)
+                                                                </button>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     {/* Meta Info */}
