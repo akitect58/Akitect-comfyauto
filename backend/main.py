@@ -1871,9 +1871,9 @@ async def stream_workflow(mode: str = "long", topic: str = "", cuts: int = 20, c
     params = calculate_parameters(mode, concept, cuts, title)
     
     # Inject full cuts data into params if available
-        params['cuts_data'] = job_data.get("cuts", [])
-        params['character_prompt'] = job_data.get("characterPrompt", "")
-        params['style'] = job_data.get("style", "photoreal")
+    params['cuts_data'] = job_data.get("cuts", [])
+    params['character_prompt'] = job_data.get("characterPrompt", "")
+    params['style'] = job_data.get("style", "photoreal")
 
     # Use real generator by default, which has internal fallback or error handling
     return StreamingResponse(
