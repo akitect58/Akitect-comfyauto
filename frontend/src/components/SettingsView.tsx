@@ -19,6 +19,8 @@ type Settings = {
         veo_video: string;
         title_generation: string;
         negative_prompt: string;
+        style_animation: string;
+        negative_prompt_animation: string;
     };
 };
 
@@ -42,6 +44,8 @@ export default function SettingsView() {
     const [veoVideoPrompt, setVeoVideoPrompt] = useState('');
     const [titlePrompt, setTitlePrompt] = useState('');
     const [negativePrompt, setNegativePrompt] = useState('');
+    const [animationPrompt, setAnimationPrompt] = useState('');
+    const [animationNegativePrompt, setAnimationNegativePrompt] = useState('');
     const [useReferenceImage, setUseReferenceImage] = useState(true);
     const [selectedModel, setSelectedModel] = useState('');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -96,7 +100,8 @@ export default function SettingsView() {
             setVeoVideoPrompt(data.prompts?.veo_video || '');
             setTitlePrompt(data.prompts?.title_generation || '');
             setNegativePrompt(data.prompts?.negative_prompt || '');
-            setNegativePrompt(data.prompts?.negative_prompt || '');
+            setAnimationPrompt(data.prompts?.style_animation || '');
+            setAnimationNegativePrompt(data.prompts?.negative_prompt_animation || '');
             setUseReferenceImage(data.use_reference_image !== false);
             setSelectedModel(data.selected_model || '');
         } catch (e: any) {
@@ -130,7 +135,9 @@ export default function SettingsView() {
                     scene_image: sceneImagePrompt,
                     veo_video: veoVideoPrompt,
                     title_generation: titlePrompt,
-                    negative_prompt: negativePrompt
+                    negative_prompt: negativePrompt,
+                    style_animation: animationPrompt,
+                    negative_prompt_animation: animationNegativePrompt
                 }
             };
 
@@ -372,7 +379,7 @@ export default function SettingsView() {
                     {/* Negative Prompt - 항상 상단에 */}
                     <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
                         <label className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2 mb-2">
-                            <Icon icon="solar:forbidden-bold" /> 네거티브 프롬프트 (이미지 생성 시 제외할 요소)
+                            <Icon icon="solar:forbidden-bold" /> 네거티브 프롬프트 (실사)
                         </label>
                         <textarea
                             value={negativePrompt}
@@ -381,6 +388,34 @@ export default function SettingsView() {
                             className="w-full bg-slate-950 border border-red-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-500 font-mono resize-none"
                             placeholder="cgi, 3d render, anime, ..."
                         />
+                    </div>
+
+                    {/* Animation Style Prompts */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-pink-500/5 border border-pink-500/20 rounded-2xl p-4">
+                            <label className="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                                <Icon icon="solar:palette-bold" /> 만화 스타일 프롬프트
+                            </label>
+                            <textarea
+                                value={animationPrompt}
+                                onChange={(e) => setAnimationPrompt(e.target.value)}
+                                rows={3}
+                                className="w-full bg-slate-950 border border-pink-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-pink-500 font-mono resize-none"
+                                placeholder="A vertical 16:9 semi-realistic digital portrait..."
+                            />
+                        </div>
+                        <div className="bg-pink-500/5 border border-pink-500/20 rounded-2xl p-4">
+                            <label className="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                                <Icon icon="solar:forbidden-circle-bold" /> 만화 네거티브
+                            </label>
+                            <textarea
+                                value={animationNegativePrompt}
+                                onChange={(e) => setAnimationNegativePrompt(e.target.value)}
+                                rows={3}
+                                className="w-full bg-slate-950 border border-pink-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-pink-500 font-mono resize-none"
+                                placeholder="photorealistic, 3d render..."
+                            />
+                        </div>
                     </div>
 
                     {/* Draft Generation */}

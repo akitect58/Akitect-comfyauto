@@ -961,6 +961,8 @@ def prepare_workflow(template: dict, replacements: dict) -> dict:
     target_model = replacements.get("ckpt_name")
     target_seed = replacements.get("seed")
     target_cut_num = replacements.get("cut_number", 1)
+    target_width = replacements.get("width")
+    target_height = replacements.get("height")
     
     for node_id, node in workflow.items():
         inputs = node.get("inputs", {})
@@ -969,6 +971,11 @@ def prepare_workflow(template: dict, replacements: dict) -> dict:
         if target_model and node.get("class_type") == "CheckpointLoaderSimple":
             inputs["ckpt_name"] = target_model
             
+        # Replace Dimensions (EmptyLatentImage)
+        if node.get("class_type") == "EmptyLatentImage":
+            if target_width: inputs["width"] = target_width
+            if target_height: inputs["height"] = target_height
+
         # Replace Seed in KSampler or similar
         if target_seed is not None and "seed" in inputs:
             inputs["seed"] = target_seed
@@ -1054,12 +1061,18 @@ async def generate_reference_image(req: ReferenceImageRequest):
                 print(f"⚠️ Model '{selected_model}' not found, using '{available_models[0]}' instead.")
                 selected_model = available_models[0]
 
+        is_long = req.mode.lower() == "long" or "long form" in req.mode.lower()
+        width = 1920 if is_long else 1080
+        height = 1080 if is_long else 1920
+
         workflow = prepare_workflow(workflow_template, {
             "positive_prompt": positive_prompt,
             "negative_prompt": negative_prompt,
             "seed": seed,
             "cut_number": req.cut.get("cutNumber", 1),
-            "ckpt_name": selected_model
+            "ckpt_name": selected_model,
+            "width": width,
+            "height": height
         })
                                                                                                                                                                                                                                                                                     
         # Initialize ComfyUI client
@@ -1372,7 +1385,8 @@ async def story_generation_stream(
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_input}
                             ],
-                            response_format={"type": "json_object"}
+                            response_format={"type": "json_object"},
+                            timeout=90.0
                         )
                         
                         content = response.choices[0].message.content
@@ -1590,13 +1604,15 @@ async def generate_titles(req: TitleRequest):
 # [Core Logic] Parameter Calculator
 # ==========================================
 def calculate_parameters(mode: str, concept: str, cuts: int, selected_title: str = ""):
+    is_long = mode.lower() == "long" or "long form" in mode.lower()
+    
     params = {
-        "resolution_w": 1920 if mode == "Long Form (16:9)" else 1080,
-        "resolution_h": 1080 if mode == "Long Form (16:9)" else 1920,
-        "mode_name": "LONG_FORM" if mode == "Long Form (16:9)" else "SHORT_FORM",
+        "resolution_w": 1920 if is_long else 1080,
+        "resolution_h": 1080 if is_long else 1920,
+        "mode_name": "LONG_FORM" if is_long else "SHORT_FORM",
         "total_cuts": cuts,
         "concept": concept,
-        "image_filename": "animal_protagonist_wide.png" if mode == "Long Form (16:9)" else "animal_protagonist_tall.png",
+        "image_filename": "animal_protagonist_wide.png" if is_long else "animal_protagonist_tall.png",
         "selected_title": selected_title
     }
     
@@ -1826,6 +1842,7 @@ generation_jobs = {}
 
 class QueueRequest(BaseModel):
     mode: str
+    style: str = "photoreal"
     topic: str
     cuts: List[dict]
     concept: str = "Default"
@@ -1854,9 +1871,9 @@ async def stream_workflow(mode: str = "long", topic: str = "", cuts: int = 20, c
     params = calculate_parameters(mode, concept, cuts, title)
     
     # Inject full cuts data into params if available
-    if job_data:
         params['cuts_data'] = job_data.get("cuts", [])
         params['character_prompt'] = job_data.get("characterPrompt", "")
+        params['style'] = job_data.get("style", "photoreal")
 
     # Use real generator by default, which has internal fallback or error handling
     return StreamingResponse(
@@ -1957,12 +1974,37 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
             # Prepare Prompt
             if current_cut:
                 # Construct detailed prompt from story data
-                # 1. Use specific English Image Prompt if available (Best)
-                if current_cut.get("imagePrompt"):
+                # 1. First check if style is animation/cartoon
+                if params.get("style") == "animation":
+                    # Animation Style
+                    # Load animation template
+                    # e.g. "A vertical 16:9 semi-realistic digital portrait..."
+                    anim_template = config.get("prompts", {}).get("style_animation", "")
+                    
+                    desc = clean_string(current_cut.get("description", ""))
+                    # Subject description for animation usually combines protagonist + action
+                    # In main story gen, we might rely on 'description' having the action.
+                    # Let's use description directly in place of {{subject_description}}
+                    
+                    # Also append character prompt if needed, but style_animation usually expects {{subject_description}}
+                    # We can format subject_description as "{character_prompt}, {description}"
+                    
+                    char_p = clean_string(params.get("character_prompt", "Character"))
+                    subject_desc = f"{char_p}, {desc}"
+                    
+                    positive_prompt = anim_template.replace("{{subject_description}}", subject_desc)
+                    
+                    # Override negative prompt for animation
+                    raw_neg = config.get("prompts", {}).get("negative_prompt_animation", "")
+                    negative_prompt = clean_string(raw_neg)
+                    
+                # 2. Use specific English Image Prompt if available (Best for Photoreal)
+                elif current_cut.get("imagePrompt"):
                     # Sanitize: remove control characters and newlines
                     positive_prompt = clean_string(current_cut.get('imagePrompt', ''))
+                    
                 else:
-                    # 2. Fallback: Construct from other fields
+                    # 3. Fallback: Construct from other fields (Photoreal)
                     desc = clean_string(current_cut.get("description", ""))
                     physics = clean_string(current_cut.get("physicsDetail", ""))
                     lighting = clean_string(current_cut.get("lightingCondition", ""))
@@ -1979,9 +2021,10 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                 positive_template = config.get("prompts", {}).get("positive_prompt_template", "photorealistic, 8K UHD, {{scene}}")
                 positive_prompt = positive_template.replace("{{scene}}", f"{topic}, scene {i}")
 
-            # Get negative prompt from config and clean it
-            raw_neg = config.get("prompts", {}).get("negative_prompt", "bad quality, blurry, text, watermark")
-            negative_prompt = clean_string(raw_neg)
+            # Get negative prompt from config and clean it (if not already set by animation logic)
+            if params.get("style") != "animation":
+                raw_neg = config.get("prompts", {}).get("negative_prompt", "bad quality, blurry, text, watermark")
+                negative_prompt = clean_string(raw_neg)
 
             # [Veo 3.1 Integration] Generate 5-Element Video Prompt
             veo_prompt_text = ""
@@ -2023,7 +2066,9 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                 "negative_prompt": negative_prompt,
                 "seed": seed,
                 "cut_number": i,
-                "ckpt_name": selected_model
+                "ckpt_name": selected_model,
+                "width": params.get("resolution_w", 1920),
+                "height": params.get("resolution_h", 1080)
             })
             
             # Queue Prompt

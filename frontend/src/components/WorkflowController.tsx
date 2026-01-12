@@ -567,6 +567,7 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     mode: modeStr,
+                    style: state.style,
                     topic: state.selectedDraft?.title || 'Story',
                     cuts: state.cuts, // Pass full cuts data
                     concept: "기본 (Default)",
@@ -1108,7 +1109,7 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                             </div>
 
                             <div className="grid grid-cols-3 gap-6">
-                                <div className="col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
+                                <div className="col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden relative">
                                     <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between">
                                         <span className="text-xs font-bold text-slate-400 uppercase">📝 상세 스토리 ({state.mode === 'long' ? 100 : 20}컷)</span>
                                         <span className="text-[10px] text-slate-500">{state.editedStory.length} 자</span>
