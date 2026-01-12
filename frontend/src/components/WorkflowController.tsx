@@ -44,7 +44,18 @@ type WorkflowState = {
 };
 
 
-const CATEGORIES = ["사고", "자연재해", "보은", "미스터리", "서바이벌", "로맨스", "우정", "복수", "성장", "모험"];
+const CATEGORIES = [
+    "사고·부상",
+    "자연재해",
+    "학대·방치·호딩",
+    "보은 및 영웅적 행동",
+    "도시형 고립",
+    "유기 및 유실",
+    "모성애",
+    "장애 및 노령 동물의 생존",
+    "종을 뛰어넘는 우정",
+    "사회적 약자와의 동행"
+];
 const STEPS = ["모드 선택", "주제 입력", "스토리 확정", "이미지 생성", "제목 선택"];
 
 export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 'generate' | 'history') => void }) {

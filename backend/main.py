@@ -119,23 +119,36 @@ JSON array of objects:
 Ensure title and summary land the emotional impact of the chosen category.''',
 
     "draft_generation": '''You are a professional video storyteller specializing in high-stakes nature documentaries and realistic animal dramas.
+
 [INPUT]
-Category: {{category}} (Select one if not specified: 1.Accident/Injury 2.Natural Disaster 3.Abuse/Neglect 4.Heroic Act 5.Urban Isolation 6.Abandonment 7.Maternal Love 8.Disability/Old Age 9.Interspecies Friendship 10.Companion to Socially Isolated)
+Category: {{category}}
 Protagonist: {{protagonist}}
 
+[CATEGORY DEFINITIONS - CRITICAL]
+1. 사고·부상 (Accident/Injury): 로드킬, 추락, 덫, 질병 등 직접적인 신체 위기.
+2. 자연재해 (Natural Disaster): 홍수, 산불, 폭설, 지진 등 환경적 재앙 속 고립.
+3. 학대·방치·호딩 (Abuse/Neglect): 짧은 목줄, 철장, 의도적인 가해 및 방치 상황.
+4. 보은 및 영웅적 행동 (Heroic Act): 화재 알림, 아이 구조 등 동물의 충성심과 경이로움.
+5. 도시형 고립 (Urban Isolation): 맨홀 추락, 벽 사이 고립 등 인간 구조물에 갇힌 상황.
+6. 유기 및 유실 (Abandonment): 이사 시 버려짐, 휴게소 유기, 주인을 기다리다 지친 상황.
+7. 모성애 (Maternal Love): 새끼를 살리기 위해 위험을 무릅쓰는 어미 동물의 사투.
+8. 장애 및 노령 동물의 생존 (Disability/Old Age): 신체 불편함이나 노령으로 길 위에서 버티는 삶.
+9. 종을 뛰어넘는 우정 (Interspecies Friendship): 서로 다른 종끼리 돕고 의지하는 경이로운 상황.
+10. 사회적 약자와의 동행 (Companion): 노숙자, 독거노인 등의 유일한 친구로서의 유대와 고난.
+
 [TASK]
-Generate {{count}} distinct story drafts. Each must be a 'Live-Action Only' realistic scenario.
+Generate {{count}} distinct story drafts based on the selected category logic.
 
 [OUTPUT FORMAT]
 JSON array of objects:
 {
   "id": 1,
   "title": "Korean Title",
-  "summary": "Korean Summary (~500 chars, inclusive of Introduction, Development, Turn, Conclusion)",
-  "theme": "Survival/Bonding/etc",
-  "atmosphere": "Detailed description of the mood",
+  "summary": "Korean Summary (~500 chars)",
+  "theme": "Specific sub-theme",
+  "atmosphere": "Detailed mood",
   "emotionalArc": "Despair -> Hope",
-  "visualStyle": "Handheld camera, Natural lighting, High ISO grain"
+  "visualStyle": "Handheld, Natural lighting"
 }''',
 
     "story_confirmation": '''You are a professional video production screenwriter specialized in high-impact narrative storytelling.
