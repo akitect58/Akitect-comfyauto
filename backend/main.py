@@ -1327,52 +1327,69 @@ async def story_generation_stream(
                 system_prompt = system_prompt.replace("{{chunk_size}}", str(end_idx - start_idx))
                 system_prompt = system_prompt.replace("{{atmosphere}}", str(draftSummary)) # Use summary/atmosphere
 
-                user_input = f"Generate cuts {start_idx+1} to {end_idx}. Focus on sequential flow. Output valid JSON."
+                max_retries = 3
+                retry_count = 0
+                chunk_success = False
                 
-                # Using synchronous call inside thread for this chunk
-                response = await asyncio.to_thread(
-                    client.chat.completions.create,
-                    model="gpt-5-mini-2025-08-07",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_input}
-                    ],
-                    response_format={"type": "json_object"}
-                )
-                
-                content = response.choices[0].message.content
-                
-                # Parse Chunk
-                try:
-                    chunk_json = json.loads(content)
-                    chunk_cuts = chunk_json.get("cuts", [])
-                    
-                    # Validate and fix cut numbers
-                    for i, cut in enumerate(chunk_cuts):
-                        cut["cutNumber"] = start_idx + 1 + i
-                        cut["characterTag"] = "The Wild Animal" # Force tag again
-                    
-                    generated_cuts.extend(chunk_cuts)
-                    
-                    # Stream this chunk to frontend
-                    # Convert chunk cuts to partial text or special event? 
-                    # The frontend expects 'delta' text or 'complete' list.
-                    # We can yield a 'progress' event or just stream text representation.
-                    # For now, let's yield the text representation so the user sees progress in the text box.
-                    
-                    chunk_text_representation = f"\n[Chunk {current_chunk_num}]\n"
-                    for cut in chunk_cuts:
-                        chunk_text_representation += f"{cut['cutNumber']}. {cut['description']}\n"
-                    
-                    yield {"event": "delta", "data": json.dumps({"text": chunk_text_representation})}
-                    
-                    # Update Context for next loop
-                    last_cut_desc = chunk_cuts[-1]['description'] if chunk_cuts else ""
-                    previous_context_summary += f"\n[Chunk {current_chunk_num} Summary]: Ends with {last_cut_desc}"
-                    
-                except Exception as parse_e:
-                    print(f"Chunk parse error: {parse_e}")
-                    yield {"event": "delta", "data": json.dumps({"text": f"\n[Error parsing chunk {current_chunk_num}]\n"})}
+                while retry_count < max_retries and not chunk_success:
+                    try:
+                        if retry_count > 0:
+                            print(f"Retrying Chunk {current_chunk_num} (Attempt {retry_count+1})...")
+                        
+                        user_input = f"Generate cuts {start_idx+1} to {end_idx}. Focus on sequential flow. Output valid JSON."
+                        
+                        # Using synchronous call inside thread for this chunk
+                        response = await asyncio.to_thread(
+                            client.chat.completions.create,
+                            model="gpt-5-mini-2025-08-07",
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_input}
+                            ],
+                            response_format={"type": "json_object"}
+                        )
+                        
+                        content = response.choices[0].message.content
+                        
+                        # Parse Chunk
+                        chunk_json = json.loads(content)
+                        chunk_cuts = chunk_json.get("cuts", [])
+                        
+                        if not chunk_cuts:
+                            raise ValueError("No cuts returned in JSON")
+
+                        # Validate and fix cut numbers
+                        for i, cut in enumerate(chunk_cuts):
+                            if "description" not in cut:
+                                raise ValueError(f"Missing 'description' in cut {start_idx + 1 + i}")
+                            
+                            cut["cutNumber"] = start_idx + 1 + i
+                            cut["characterTag"] = "The Wild Animal" # Force tag again
+                        
+                        generated_cuts.extend(chunk_cuts)
+                        
+                        # Stream this chunk to frontend
+                        chunk_text_representation = f"\n[Chunk {current_chunk_num}]\n"
+                        for cut in chunk_cuts:
+                            chunk_text_representation += f"{cut['cutNumber']}. {cut['description']}\n"
+                            if 'imagePrompt' in cut:
+                                chunk_text_representation += f"   [Image Prompt]: {cut['imagePrompt'][:50]}...\n"
+                        
+                        yield {"event": "delta", "data": json.dumps({"text": chunk_text_representation})}
+                        
+                        # Update Context for next loop
+                        last_cut_desc = chunk_cuts[-1]['description'] if chunk_cuts else ""
+                        previous_context_summary += f"\n[Chunk {current_chunk_num} Summary]: Ends with {last_cut_desc}"
+                        
+                        chunk_success = True
+                        
+                    except Exception as parse_e:
+                        retry_count += 1
+                        print(f"Chunk parse error (Attempt {retry_count}): {parse_e}")
+                        yield {"event": "delta", "data": json.dumps({"text": f"\n[Error parsing chunk {current_chunk_num}... Retrying ({retry_count}/{max_retries})]\n"})}
+                        
+                        if retry_count >= max_retries:
+                            yield {"event": "delta", "data": json.dumps({"text": f"\n[Failed Chunk {current_chunk_num} after retries. Manual review required.]\n"})}
 
             # Final Complete Event with ALL cuts
             full_text = "\n".join([f"{c['cutNumber']}. {c['description']}" for c in generated_cuts])
