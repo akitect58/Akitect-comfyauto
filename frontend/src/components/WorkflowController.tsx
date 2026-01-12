@@ -502,6 +502,21 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
         }
     };
 
+    // [CONTROL] Stop or Finish Early
+    const controlGeneration = async (action: 'stop' | 'finish_early') => {
+        try {
+            const response = await fetch('http://localhost:3501/api/workflow/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            });
+            const data = await response.json();
+            console.log("Control response:", data);
+        } catch (e) {
+            console.error("Control failed:", e);
+        }
+    };
+
     // Step 2 -> Step 3: Generate first reference image (or skip if disabled)
     const startGeneration = async () => {
         // 1. Ensure we have the latest settings
@@ -1299,6 +1314,40 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                 </>
                             )}
 
+                            {/* Progress Bar & Log */}
+                            {state.isProcessing && (
+                                <div className="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
+                                    <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                                        <span className="loading loading-spinner text-primary"></span>
+                                        {state.step === 2 ? '스토리 생성 중...' : '이미지 생성 중...'}
+                                    </h3>
+
+                                    {/* [CONTROL] Buttons: Only show during Image Generation (Step 3+) */}
+                                    {state.step >= 3 && (
+                                        <div className="flex gap-2 mb-4">
+                                            <button
+                                                onClick={() => controlGeneration('stop')}
+                                                className="btn btn-error btn-sm text-white"
+                                            >
+                                                🛑 중단 (Stop)
+                                            </button>
+                                            <button
+                                                onClick={() => controlGeneration('finish_early')}
+                                                className="btn btn-warning btn-sm text-white"
+                                            >
+                                                🏁 이까지만 생성 (Finish Here)
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <div className="h-48 overflow-y-auto font-mono text-xs bg-black p-2 rounded text-green-400">
+                                        {state.logs.map((log, i) => (
+                                            <div key={i}>{log}</div>
+                                        ))}
+                                        <div ref={logEndRef} />
+                                    </div>
+                                </div>
+                            )}
                             {/* Logs */}
                             {/* Logs & Live Preview */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

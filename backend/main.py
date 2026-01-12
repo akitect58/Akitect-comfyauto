@@ -199,6 +199,41 @@ Character Tag: {{character_tag}}
   }
 }''',
 
+    "story_chunk_generation": '''You are generating a specific chunk of a 100-cut video screenplay. 
+
+[CONTEXT]
+Title: {{story_title}}
+Current Chunk: Cuts {{start_cut}} to {{end_cut}}
+Previous Context: {{previous_context}}
+Atmosphere: {{atmosphere}}
+Character Tag: The Wild Animal
+
+[REQUIREMENTS]
+- Generate exactly {{chunk_size}} cuts.
+- Maintain perfect continuity with Previous Context.
+- **Start with cut number {{start_cut}}**.
+- **FIELDS (MANDATORY)**:
+  1. cutNumber (int)
+  2. description (String, **KOREAN**): Visual scene summary.
+  3. imagePrompt (String, **ENGLISH**): Detailed SDXL prompt.
+  4. characterTag (String): 'The Wild Animal'
+  5. physicsDetail (String)
+  6. sfxGuide (String)
+
+[OUTPUT EXAMPLE]
+{
+  "cuts": [
+    {
+      "cutNumber": 1,
+      "description": "한글 설명...",
+      "imagePrompt": "English prompt...",
+      "characterTag": "The Wild Animal",
+      "physicsDetail": "...",
+      "sfxGuide": "..."
+    }
+  ]
+}''',
+
     "single_cut_regeneration": '''You are regenerating a single cut within an existing story sequence.
 
 [CONTEXT]
@@ -1409,6 +1444,22 @@ async def story_generation_stream(
 
     return EventSourceResponse(event_generator())
 
+# Global state for generation control
+generation_state = {
+    "status": "running" # running, stopped, finish_early
+}
+
+class ControlRequest(BaseModel):
+    action: str # "stop" | "finish_early"
+
+@app.post("/api/workflow/control")
+async def control_generation(req: ControlRequest):
+    global generation_state
+    if req.action in ["stop", "finish_early"]:
+        generation_state["status"] = req.action
+        return {"status": "updated", "new_state": generation_state["status"]}
+    return {"status": "ignored", "reason": "invalid_action"}
+
 @app.post("/api/workflow/regenerate-cut")
 async def regenerate_cut(req: RegenerateCutRequest):
     """Regenerate a single cut while maintaining story continuity"""
@@ -1787,6 +1838,10 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
     
     total_cuts = params['total_cuts']
     
+    # [CONTROL] Reset state at start
+    global generation_state
+    generation_state["status"] = "running"
+    
     yield create_sse_event({"type": "log", "message": f"🚀 프로젝트 생성: {folder_name}"})
     yield create_sse_event({"type": "log", "message": f"📸 총 {total_cuts}컷 이미지 생성 시작 (Real ComfyUI)"})
 
@@ -1814,15 +1869,26 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
     #     ...
 
     generated_images = []
+    cuts_data = params.get("cuts_data", [])
     
-    for i in range(1, total_cuts + 1):
-        yield create_sse_event({"type": "log", "message": f"⏳ [Cut {i}/{total_cuts}] 생성 중...", "cutIndex": i})
+    for i, current_cut in enumerate(cuts_data):
+        # [CONTROL] Check State
+        if generation_state["status"] == "stopped":
+            yield create_sse_event({"type": "log", "message": "🛑 사용자 요청으로 생성이 중단되었습니다."})
+            yield create_sse_event({"type": "error", "message": "Generation Stopped"}) # Frontend handles this
+            generation_state["status"] = "idle" # Reset state
+            return
+            
+        elif generation_state["status"] == "finish_early":
+            yield create_sse_event({"type": "log", "message": "🏁 사용자 요청으로 조기 종료합니다. (현재까지 생성된 이미지만 저장)"})
+            generation_state["status"] = "idle" # Reset state
+            break # Break loop, proceed to DONE
+            
+        cut_number = current_cut.get("cutNumber", i+1)
+        yield create_sse_event({"type": "log", "message": f"⏳ [Cut {cut_number}/{total_cuts}] 생성 중...", "cutIndex": cut_number})
         
         try:
             # Prepare Prompt
-            cuts_data = params.get("cuts_data", [])
-            current_cut = next((c for c in cuts_data if c.get("cutNumber") == i), None)
-            
             if current_cut:
                 # Construct detailed prompt from story data
                 # 1. Use specific English Image Prompt if available (Best)
