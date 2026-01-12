@@ -1556,7 +1556,10 @@ async def generate_titles(req: TitleRequest):
     
     # Real OpenAI API call
     try:
-        system_prompt = config.get("prompts", {}).get("title_generation", "영미권 콘텐츠 마케팅 전문가입니다. 스토리 분석 후 영어 제목 8개를 JSON 배열로 반환하세요.")
+        system_prompt = config.get("prompts", {}).get("title_generation", "한국 콘텐츠 마케팅 전문가입니다. 스토리 분석 후 한국어 제목 8개를 JSON 배열로 반환하세요.")
+        
+        # Force strict Korean instruction
+        system_prompt += "\n\n[CRITICAL REQUEST] All titles must be in KOREAN (한국어). Do NOT generate English titles."
         
         response = client.responses.create(
             model="gpt-5-mini-2025-08-07",
@@ -1639,7 +1642,7 @@ async def get_history():
                 except:
                     pass
             
-            thumbnails = [f"/outputs/{folder_name}/{img}" for img in images[:3]]
+            thumbnails = [f"/outputs/{urllib.parse.quote(folder_name)}/{img}" for img in images[:3]]
             
             history.append({
                 "id": folder_name,
@@ -1656,32 +1659,104 @@ async def get_history():
 async def get_project_details(folder_name: str):
     folder_path = os.path.join(OUTPUTS_DIR, folder_name)
     if not os.path.exists(folder_path):
-        return {"error": "Not found"}
-    
+        return {"error": "Project not found"}
+        
     images = sorted([f for f in os.listdir(folder_path) if f.endswith(('.png', '.jpg'))])
+    assets = [f"/outputs/{urllib.parse.quote(folder_name)}/{img}" for img in images]
+    
     meta_path = os.path.join(folder_path, "metadata.json")
-    meta = {}
+    metadata = {}
     if os.path.exists(meta_path):
         with open(meta_path, 'r') as f:
-            meta = json.load(f)
+            metadata = json.load(f)
             
     return {
-        "title": meta.get("title", folder_name),
-        "assets": [f"/outputs/{folder_name}/{img}" for img in images],
-        "metadata": meta
+        "title": metadata.get("title", folder_name),
+        "folder_name": folder_name,
+        "assets": assets,
+        "metadata": metadata
     }
 
 @app.delete("/api/history/{folder_name}")
-async def delete_history(folder_name: str):
-    folder_path = os.path.join(OUTPUTS_DIR, folder_name)
-    if os.path.exists(folder_path) and os.path.isdir(folder_path):
-        abs_outputs = os.path.abspath(OUTPUTS_DIR)
-        abs_target = os.path.abspath(folder_path)
-        if not abs_target.startswith(abs_outputs):
-            return {"success": False, "error": "Invalid path"}
-        shutil.rmtree(folder_path)
-        return {"success": True}
-    return {"success": False, "error": "Folder not found"}
+async def delete_project(folder_name: str):
+    try:
+        folder_path = os.path.join(OUTPUTS_DIR, folder_name)
+        if os.path.exists(folder_path):
+            import shutil
+            shutil.rmtree(folder_path)
+            return {"success": True}
+        return {"success": False, "error": "Folder not found"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/workflow/history/{folder_name}/generate_veo_prompts")
+async def generate_veo_prompts_for_history(folder_name: str):
+    """Generate Veo 3.1 prompts for an existing project using saved cut data"""
+    try:
+        import urllib.parse
+        folder_name = urllib.parse.unquote(folder_name) # Ensure decoded
+        folder_path = os.path.join(OUTPUTS_DIR, folder_name)
+        meta_path = os.path.join(folder_path, "metadata.json")
+        
+        if not os.path.exists(folder_path) or not os.path.exists(meta_path):
+            return {"success": False, "error": "Project metadata not found"}
+            
+        config = load_config()
+        client = get_openai_client()
+        
+        with open(meta_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+            
+        cuts_data = metadata.get("cuts_data", [])
+        if not cuts_data:
+            return {"success": False, "error": "No cut data found in metadata. Cannot regenerate."}
+            
+        updated_cuts = []
+        veo_prompt_template = config.get("prompts", {}).get("veo_video", "")
+        
+        for cut in cuts_data:
+            # Need strict fields for Veo prompt
+            # If sfxGuide is missing, we might need to infer or make empty
+            if "sfxGuide" not in cut: 
+                cut["sfxGuide"] = "Natural ambiance"
+                
+            if "videoPrompt" not in cut or not cut["videoPrompt"]:
+                # Generate Prompt
+                try:
+                    prompt_text = veo_prompt_template
+                    # Replace standard keys
+                    prompt_text = prompt_text.replace("{{cut_number}}", str(cut.get("cutNumber", "")))
+                    prompt_text = prompt_text.replace("{{scene_description}}", cut.get("description", ""))
+                    prompt_text = prompt_text.replace("{{character_tag}}", cut.get("characterTag", "The Character"))
+                    prompt_text = prompt_text.replace("{{emotion_level}}", str(cut.get("emotionLevel", "5")))
+                    prompt_text = prompt_text.replace("{{physics_detail}}", cut.get("physicsDetail", "None"))
+                    prompt_text = prompt_text.replace("{{sfx_guide}}", cut.get("sfxGuide", "None"))
+                    
+                    # Call LLM for refinement
+                    response = client.responses.create(
+                        model="gpt-5-mini-2025-08-07",
+                        input=[
+                            {"role": "system", "content": "You are a prompt engineer. Output strictly the filled prompt."},
+                            {"role": "user", "content": f"Complete this template:\n\n{prompt_text}"}
+                        ]
+                    )
+                    cut["videoPrompt"] = response.output_text.strip()
+                    cut["veo_generated"] = True
+                except Exception as e:
+                     print(f"Error generating Veo prompt for cut {cut.get('cutNumber')}: {e}")
+                     cut["videoPrompt"] = "Generation Failed"
+            
+            updated_cuts.append(cut)
+            
+        # Save back
+        metadata["cuts_data"] = updated_cuts
+        with open(meta_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=4, ensure_ascii=False)
+            
+        return {"success": True, "updated_cuts": updated_cuts}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # ==========================================
 # [Helpers] SSE & Utils

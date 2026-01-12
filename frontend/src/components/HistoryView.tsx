@@ -16,6 +16,7 @@ type HistoryItem = {
 
 type ProjectDetail = {
     title: string;
+    folder_name: string;
     assets: string[];
     metadata: {
         mode: string;
@@ -24,6 +25,7 @@ type ProjectDetail = {
             description: string;
             imagePrompt: string;
             sfxGuide?: string;
+            videoPrompt?: string; // New field for Veo 3.1
             filename?: string;
             emotionLevel?: number;
             characterTag?: string;
@@ -82,6 +84,41 @@ export default function HistoryView() {
             alert("서버 연결 오류로 삭제에 실패했습니다.");
         } finally {
             setIsDeleting(null);
+        }
+    };
+
+    const regenerateVeoData = async () => {
+        if (!selectedProject) return;
+
+        setIsLoading(true);
+        try {
+            const res = await fetch(`http://localhost:3501/api/workflow/history/${selectedProject.folder_name}/generate_veo_prompts`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // Update local state by re-fetching project details or manually merging
+                // Ideally re-fetch or merge. Let's merge for speed.
+                setSelectedProject(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        metadata: {
+                            ...prev.metadata,
+                            cuts_data: data.updated_cuts
+                        }
+                    };
+                });
+                alert("VEO 3.1 프롬프트가 생성되었습니다. ('VEO 3.1 Prompt' 항목을 확인하세요)");
+            } else {
+                alert("생성 실패: " + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("서버 통신 오류");
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -323,6 +360,17 @@ export default function HistoryView() {
                                         <Icon icon="solar:download-minimalistic-bold" />
                                         Bulk Download
                                     </button>
+
+                                    {/* Veo Regen Button - Show if any cut is missing videoPrompt but has description */}
+                                    {selectedProject.metadata.cuts_data?.some(c => !c.videoPrompt && c.description) && (
+                                        <button
+                                            onClick={regenerateVeoData}
+                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+                                        >
+                                            <Icon icon="solar:magic-stick-3-bold-duotone" />
+                                            VEO 3.1 데이터 생성
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setSelectedProject(null)}
                                         className="p-2 text-slate-400 hover:text-white"
@@ -384,8 +432,23 @@ export default function HistoryView() {
                                                         </p>
                                                     </div>
 
-                                                    {/* Veo / Video Prompt (if available) - Assuming sfxGuide or constructing logic */}
-                                                    {/* If we stored Veo prompt explicitly we could show it, otherwise show components */}
+                                                    {/* VEO 3.1 Prompt */}
+                                                    <div className="bg-gradient-to-br from-indigo-900/20 to-purple-900/20 p-4 rounded-xl border border-indigo-500/20">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                                                                <Icon icon="solar:videocamera-record-bold" />
+                                                                VEO 3.1 Video Prompt
+                                                            </h4>
+                                                            {!cutData?.videoPrompt && (
+                                                                <span className="text-[10px] text-indigo-400/50 italic">Not generated</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-indigo-200/80 text-xs font-mono leading-relaxed select-all">
+                                                            {cutData?.videoPrompt || "Click 'VEO 3.1 데이터 생성' button above to generate."}
+                                                        </p>
+                                                    </div>
+
+                                                    {/* Meta Info */}
                                                     <div className="grid grid-cols-2 gap-4">
                                                         <div className="bg-slate-800/30 p-3 rounded-lg border border-slate-800/50">
                                                             <h5 className="text-[10px] font-bold text-slate-500 mb-1">CHARACTER TAG</h5>
