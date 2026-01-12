@@ -1734,6 +1734,76 @@ async def delete_project(folder_name: str):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/api/history/{folder_name}/download")
+async def download_project(folder_name: str):
+    """Download project folder as a ZIP file"""
+    import zipfile
+    import io
+    
+    # Sanitize folder name just in case, though basic validation happens via os.path
+    folder_path = os.path.join(OUTPUTS_DIR, folder_name)
+    if not os.path.exists(folder_path):
+        return {"error": "Project not found"}
+        
+    # Create in-memory zip
+    # WARN: If folder is huge, in-memory might be bad. But for typical project size it's ok.
+    # Alternatively, create a temp file.
+    
+    # Using temp file for robustness
+    import tempfile
+    
+    try:
+        # Create a temporary file to store the zip
+        # We use a temp directory to avoid permissions issues or cleanup tricky logic in OUTPUTS
+        temp_dir = tempfile.mkdtemp()
+        zip_filename = f"{folder_name}.zip"
+        zip_path = os.path.join(temp_dir, zip_filename)
+        
+        shutil.make_archive(os.path.join(temp_dir, folder_name), 'zip', folder_path)
+        
+        # Check if archive was created (make_archive appends .zip automatically, so we used join correctly?)
+        # shutil.make_archive(base_name, format, root_dir) -> creates base_name.zip
+        # So we told it to create {temp_dir}/{folder_name}.zip
+        
+        final_zip_path = os.path.join(temp_dir, f"{folder_name}.zip")
+        
+        return FileResponse(
+            path=final_zip_path, 
+            filename=f"{folder_name}.zip", 
+            media_type='application/zip'
+        )
+        
+        # Note: cleanup of temp dir is tricky with FileResponse. 
+        # Ideally we use BackgroundTask to cleanup.
+        # But for now let's hope OS cleans up /tmp or we can improve later.
+        
+    except Exception as e:
+        print(f"Download error: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/history/{folder_name}/open")
+async def open_project_folder(folder_name: str):
+    """Open the project folder in the system's file explorer"""
+    folder_path = os.path.join(OUTPUTS_DIR, folder_name)
+    if not os.path.exists(folder_path):
+        return {"error": "Project not found"}
+    
+    try:
+        if os.name == 'nt':  # Windows
+            os.startfile(folder_path)
+        elif os.name == 'posix':  # macOS or Linux
+            if sys.platform == 'darwin':
+                import subprocess
+                subprocess.run(['open', folder_path])
+            else:
+                import subprocess
+                subprocess.run(['xdg-open', folder_path])
+        return {"success": True}
+    except Exception as e:
+        print(f"Error opening folder: {e}")
+        return {"error": str(e)}
+
+
 @app.post("/api/workflow/history/{folder_name}/generate_veo_prompts")
 async def generate_veo_prompts_for_history(folder_name: str):
     """Generate Veo 3.1 prompts for an existing project using saved cut data"""

@@ -356,9 +356,18 @@ export default function HistoryView() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-slate-700">
-                                        <Icon icon="solar:download-minimalistic-bold" />
-                                        Bulk Download
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await fetch(`http://localhost:3501/api/history/${selectedProject.folder_name}/open`);
+                                            } catch (e) {
+                                                alert("폴더를 열 수 없습니다.");
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-slate-700 active:scale-95"
+                                    >
+                                        <Icon icon="solar:folder-with-files-bold" />
+                                        폴더 열기 (Open Folder)
                                     </button>
 
                                     {/* Veo Regen Button - Show if any cut is missing videoPrompt but has description */}

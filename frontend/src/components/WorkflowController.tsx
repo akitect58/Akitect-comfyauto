@@ -921,6 +921,34 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                 </button>
                             )}
                             <button
+                                onClick={async () => {
+                                    if (!state.customInput.trim()) {
+                                        alert("스토리를 입력해주세요.");
+                                        return;
+                                    }
+                                    setState(s => ({
+                                        ...s,
+                                        isProcessing: false,
+                                        step: 2,
+                                        editedStory: s.customInput,
+                                        selectedDraft: {
+                                            id: -1,
+                                            title: 'Custom Story',
+                                            story: s.customInput,
+                                            visualStyle: '',
+                                            character: '',
+                                            summary: 'Direct Input',
+                                            theme: 'Custom'
+                                        }
+                                    }));
+                                }}
+                                disabled={state.isProcessing || (state.inputMode === 'category') || (state.inputMode === 'custom' && !state.customInput)}
+                                className="px-8 py-4 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-black rounded-2xl transition-all border border-emerald-600/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
+                            >
+                                <Icon icon="solar:pen-new-square-bold-duotone" className="text-xl" />
+                                스토리 작성으로 바로 이동
+                            </button>
+                            <button
                                 onClick={fetchDrafts}
                                 disabled={state.isProcessing || (state.inputMode === 'category' && !state.category) || (state.inputMode === 'custom' && !state.customInput)}
                                 className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-2xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
