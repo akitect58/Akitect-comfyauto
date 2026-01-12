@@ -1160,12 +1160,12 @@ async def generate_story(req: StoryRequest):
         if json_match:
             parsed = json.loads(json_match.group())
             cuts = parsed.get("cuts", [])
-            character_prompt = parsed.get("characterPrompt", "캐릭터 정보 없음")
+            character_prompt = parsed.get("characterPrompt", "A majestic wild animal (Fallback)")
         else:
             # Fallback: create simple cuts from text
             lines = output_text.split('\n')
             cuts = [{"cutNumber": i+1, "description": line[:200], "imagePrompt": f"Scene {i+1}, {req.draftTitle}"} for i, line in enumerate(lines[:total_cuts]) if line.strip()]
-            character_prompt = "응답에서 캐릭터 정보를 파싱하지 못했습니다."
+            character_prompt = "A majestic wild animal (Parsing Fallback)"
         
         return {"success": True, "totalCuts": total_cuts, "cuts": cuts, "characterPrompt": character_prompt, "source": "openai"}
     except Exception as e:
@@ -1299,76 +1299,87 @@ async def story_generation_stream(
             return
 
         # Real OpenAI Streaming
-        try:
-            print("Generating prompt...")
-            system_prompt = config.get("prompts", {}).get("story_confirmation", "")
+            print("Starting Sequential Chain Prompting (10 cuts per chunk)...")
             
-            if not system_prompt:
-                system_prompt = config.get("prompts", {}).get("story_confirmation", DEFAULT_PROMPTS.get("story_confirmation", ""))
-            else:
-                # Correctly replace template variables based on DEFAULT_PROMPTS
-                system_prompt = system_prompt.replace("{{cut_count}}", str(total_cuts))
-                system_prompt = system_prompt.replace("{{story_title}}", draftTitle or "")
-                system_prompt = system_prompt.replace("{{story_summary}}", draftSummary or "")
+            chunk_size = 10
+            previous_context_summary = f"Title: {draftTitle}\nSummary: {draftSummary}"
+            generated_cuts = []
+            
+            for start_idx in range(0, total_cuts, chunk_size):
+                end_idx = min(start_idx + chunk_size, total_cuts)
+                current_chunk_num = (start_idx // chunk_size) + 1
+                total_chunks = (total_cuts + chunk_size - 1) // chunk_size
                 
-                # [Fix] Enforce Animal Protagonist Context
-                protagonist_info = config.get("prompts", {}).get("protagonist_prompt", "A majestic wild animal")
-                system_prompt = system_prompt.replace("{{character_tag}}", "The Wild Animal") 
-                system_prompt += f"\n\n[STRICT CHARACTER ENFORCEMENT]\nThe protagonist is NOT a human. It is:\n{protagonist_info}\nAll descriptions must reflect this animal's physiology and behavior." 
-            
-            user_input = f"제목: {draftTitle}\n\n초안 요약:\n{draftSummary}\n\n위 초안을 바탕으로 {total_cuts}컷의 상세 스토리와 캐릭터 묘사를 생성해주세요."
-            
-            print(f"Calling OpenAI API (Model: gpt-5-mini-2025-08-07)...")
-            
-            # Using thread pool for synchronous OpenAI client streaming
-            stream = await asyncio.to_thread(
-                client.chat.completions.create,
-                model="gpt-5-mini-2025-08-07",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_input}
-                ],
-                stream=True
-            )
-            
-            print("Stream started, receiving chunks...")
+                print(f"Generating Chunk {current_chunk_num}/{total_chunks} (Cuts {start_idx+1}-{end_idx})...")
+                
+                # Load prompt template
+                system_prompt = config.get("prompts", {}).get("story_chunk_generation", "")
+                if not system_prompt:
+                    system_prompt = DEFAULT_PROMPTS.get("story_chunk_generation", "")
+                
+                # Prepare Template
+                system_prompt = system_prompt.replace("{{story_title}}", draftTitle or "")
+                system_prompt = system_prompt.replace("{{start_cut}}", str(start_idx + 1))
+                system_prompt = system_prompt.replace("{{end_cut}}", str(end_idx))
+                system_prompt = system_prompt.replace("{{previous_context}}", previous_context_summary[-1000:]) # Keep last 1000 chars context
+                system_prompt = system_prompt.replace("{{chunk_size}}", str(end_idx - start_idx))
+                system_prompt = system_prompt.replace("{{atmosphere}}", str(draftSummary)) # Use summary/atmosphere
 
-            full_text = ""
-            for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    full_text += content
-                    # print(f"Chunk received: {content[:10]}...") # Too verbose
-                    yield {"event": "delta", "data": json.dumps({"text": content})}
-            
-            print("Stream finished. Parsing result...")
-            
-            # Parse the full text to extract cuts
-            # Try to extract JSON array if present
-            json_match = re.search(r'\{.*\}', full_text, re.DOTALL)
-            if json_match:
+                user_input = f"Generate cuts {start_idx+1} to {end_idx}. Focus on sequential flow."
+                
+                # Using synchronous call inside thread for this chunk
+                response = await asyncio.to_thread(
+                    client.chat.completions.create,
+                    model="gpt-5-mini-2025-08-07",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_input}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                
+                content = response.choices[0].message.content
+                
+                # Parse Chunk
                 try:
-                    parsed = json.loads(json_match.group())
-                    cuts = parsed.get("cuts", [])
-                    character_prompt = parsed.get("characterPrompt", "캐릭터 정보 없음")
-                    print(f"JSON parsed successfully. Cuts: {len(cuts)}")
-                except json.JSONDecodeError:
-                    print("JSON parse failed, falling back to manual parsing")
-                    lines = full_text.split('\n')
-                    cuts = [{"cutNumber": i+1, "description": line[:200]} for i, line in enumerate(lines) if line.strip()][:total_cuts]
-                    character_prompt = "캐릭터 정보 파싱 실패"
-            else:
-                print("No JSON found in response, using simple line splitting")
-                # Fallback parsing
-                lines = full_text.split('\n')
-                cuts = [{"cutNumber": i+1, "description": line[:200]} for i, line in enumerate(lines) if line.strip()][:total_cuts]
-                character_prompt = "응답에서 캐릭터 정보를 파싱하지 못했습니다."
+                    chunk_json = json.loads(content)
+                    chunk_cuts = chunk_json.get("cuts", [])
+                    
+                    # Validate and fix cut numbers
+                    for i, cut in enumerate(chunk_cuts):
+                        cut["cutNumber"] = start_idx + 1 + i
+                        cut["characterTag"] = "The Wild Animal" # Force tag again
+                    
+                    generated_cuts.extend(chunk_cuts)
+                    
+                    # Stream this chunk to frontend
+                    # Convert chunk cuts to partial text or special event? 
+                    # The frontend expects 'delta' text or 'complete' list.
+                    # We can yield a 'progress' event or just stream text representation.
+                    # For now, let's yield the text representation so the user sees progress in the text box.
+                    
+                    chunk_text_representation = f"\n[Chunk {current_chunk_num}]\n"
+                    for cut in chunk_cuts:
+                        chunk_text_representation += f"{cut['cutNumber']}. {cut['description']}\n"
+                    
+                    yield {"event": "delta", "data": json.dumps({"text": chunk_text_representation})}
+                    
+                    # Update Context for next loop
+                    last_cut_desc = chunk_cuts[-1]['description'] if chunk_cuts else ""
+                    previous_context_summary += f"\n[Chunk {current_chunk_num} Summary]: Ends with {last_cut_desc}"
+                    
+                except Exception as parse_e:
+                    print(f"Chunk parse error: {parse_e}")
+                    yield {"event": "delta", "data": json.dumps({"text": f"\n[Error parsing chunk {current_chunk_num}]\n"})}
+
+            # Final Complete Event with ALL cuts
+            full_text = "\n".join([f"{c['cutNumber']}. {c['description']}" for c in generated_cuts])
             
             yield {"event": "complete", "data": json.dumps({
-                "cuts": cuts,
-                "characterPrompt": character_prompt,
+                "cuts": generated_cuts,
+                "characterPrompt": "The Wild Animal (Detailed in Config)",
                 "fullText": full_text,
-                "source": "openai"
+                "source": "openai_chain"
             })}
             
         except Exception as e:
@@ -1728,6 +1739,58 @@ def check_comfyui_connection(host="127.0.0.1", port=8188):
     except Exception:
         return False
 
+import subprocess
+
+async def check_and_install_dependencies(client: ComfyUIClient, config: dict):
+    """
+    Check for essential custom nodes (IP-Adapter) and try to install them if missing.
+    Returns: {"installed": bool, "missing": bool, "message": str}
+    """
+    # 1. Check if IPAdapter node exists
+    try:
+        # IPAdapterUnifiedLoader is a core node of IPAdapter Plus
+        info = client.get_object_info("IPAdapterUnifiedLoader")
+        if info:
+            return {"installed": False, "missing": False, "message": "All good"}
+    except Exception:
+        pass # Node likely missing
+    
+    print("⚠️ IP-Adapter node missing. Attempting auto-install...")
+    
+    # 2. Try to Install
+    comfy_path = config.get("comfyui_path")
+    if not comfy_path or not os.path.exists(comfy_path):
+        return {"installed": False, "missing": True, "message": "ComfyUI 경로가 설정되지 않았습니다. config.json을 확인하세요."}
+        
+    custom_nodes_path = os.path.join(comfy_path, "custom_nodes")
+    if not os.path.exists(custom_nodes_path):
+        return {"installed": False, "missing": True, "message": "custom_nodes 폴더를 찾을 수 없습니다."}
+        
+    # Target Repo
+    repo_url = "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git"
+    folder_name = "ComfyUI_IPAdapter_plus"
+    target_dir = os.path.join(custom_nodes_path, folder_name)
+    
+    if os.path.exists(target_dir):
+        return {"installed": False, "missing": True, "message": "폴더는 존재하지만 로드되지 않았습니다. ComfyUI를 재시작하거나 업데이트하세요."}
+        
+    try:
+        # Run Git Clone
+        process = await asyncio.to_thread(
+            subprocess.run, 
+            ["git", "clone", repo_url, target_dir],
+            capture_output=True,
+            text=True
+        )
+        
+        if process.returncode == 0:
+            return {"installed": True, "missing": True, "message": "Installed successfully"}
+        else:
+            return {"installed": False, "missing": True, "message": f"Git clone failed: {process.stderr}"}
+            
+    except Exception as e:
+        return {"installed": False, "missing": True, "message": f"Install Error: {str(e)}"}
+
 async def real_comfyui_process_generator(params: dict, topic: str, reference_image: str = "") -> AsyncGenerator[str, None]:
     """
     Real ComfyUI generation process:
@@ -1740,6 +1803,21 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
         yield create_sse_event({"type": "error", "message": "❌ ComfyUI 서버(127.0.0.1:8188)가 켜져있지 않습니다. 실행 후 다시 시도해주세요."})
         yield create_sse_event({"type": "done"})
         return
+    
+    # 1.5. Dependency Check & Auto-Install
+    try:
+        deps_result = await check_and_install_dependencies(client, config)
+        if deps_result["installed"]:
+            yield create_sse_event({"type": "error", "message": "⚠️ [설치 완료] IP-Adapter 노드가 설치되었습니다. ComfyUI를 **재시작** 후 다시 실행해주세요."})
+            yield create_sse_event({"type": "done"})
+            return
+        elif deps_result["missing"] and not deps_result["installed"]:
+            yield create_sse_event({"type": "error", "message": f"❌ 필수 노드 누락: {deps_result['message']}"})
+            yield create_sse_event({"type": "done"})
+            return
+    except Exception as e:
+        print(f"Dep check failed: {e}")
+        # Continue anyway, might verify later
 
     config = load_config()
     comfyui_server = "127.0.0.1:8188"
@@ -1774,6 +1852,35 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
             selected_model = fallback_model
 
     # 3. Generation Loop
+    
+    # [Advanced] Reference Image & IP-Adapter Injection
+    if reference_image and os.path.exists(reference_image):
+        comfy_path = config.get("comfyui_path")
+        if comfy_path:
+            input_dir = os.path.join(comfy_path, "input")
+            if os.path.exists(input_dir):
+                # Copy file
+                ref_filename = os.path.basename(reference_image)
+                dest_path = os.path.join(input_dir, ref_filename)
+                try:
+                     shutil.copy(reference_image, dest_path)
+                     yield create_sse_event({"type": "log", "message": f"🖼️ 레퍼런스 이미지 ComfyUI 로드: {ref_filename}"})
+                     
+                     # Update Workflow "LoadImage" nodes
+                     # Update ALL LoadImage nodes to the reference image (assuming single input scenario)
+                     updated_nodes = 0
+                     for node_id, node in workflow_template.items():
+                         if node.get("class_type") == "LoadImage":
+                             if "inputs" in node and "image" in node["inputs"]:
+                                 node["inputs"]["image"] = ref_filename
+                                 updated_nodes += 1
+                     
+                     if updated_nodes > 0:
+                         yield create_sse_event({"type": "log", "message": f"✅ IP-Adapter용 이미지 노드 {updated_nodes}개 설정 완료"})
+                except Exception as e:
+                    print(f"Failed to copy reference image: {e}")
+                    yield create_sse_event({"type": "log", "message": f"⚠️ 레퍼런스 이미지 복사 실패: {e}"})
+
     generated_images = []
     
     for i in range(1, total_cuts + 1):
@@ -1904,6 +2011,9 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                                 })
 
                             yield create_sse_event({"type": "log", "message": f"✅ [Cut {i}] 생성 완료: {filename}"})
+                            
+                            # [Advanced] Force Memory Cleanup
+                            client.free_memory()
                             
                             # If this is the last cut, we can maybe show a preview
                             if i == total_cuts:

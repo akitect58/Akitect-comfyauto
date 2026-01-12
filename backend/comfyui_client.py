@@ -58,6 +58,20 @@ class ComfyUIClient:
         )
         return response.json()
 
+    def free_memory(self, unload_models=True, free_memory=True):
+        """Call ComfyUI /free endpoint to clear VRAM"""
+        data = {"unload_models": unload_models, "free_memory": free_memory}
+        json_data = json.dumps(data).encode('utf-8')
+        req = urllib.request.Request("http://{}/free".format(self.server_address), data=json_data)
+        req.method = "POST"
+        req.add_header('Content-Type', 'application/json')
+        try:
+            with urllib.request.urlopen(req) as response:
+                return True
+        except Exception as e:
+            print(f"Failed to free memory: {e}")
+            return False
+
     def connect_websocket(self, ws_url):
         ws = websocket.WebSocket()
         ws.connect(ws_url.format(self.client_id))
