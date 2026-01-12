@@ -451,9 +451,13 @@ app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 # ==========================================
 
 class SettingsUpdate(BaseModel):
-    openai_api_key: str | None = None
     comfyui_path: str | None = None
     use_reference_image: bool | None = None
+    selected_model: str | None = None
+    steps: int | None = None
+    cfg: float | None = None
+    sampler_name: str | None = None
+    scheduler: str | None = None
     prompts: dict | None = None
 
 @app.get("/api/settings")
@@ -471,6 +475,11 @@ async def get_settings():
             "openai_api_key_set": bool(config.get("openai_api_key")),
             "comfyui_path": config.get("comfyui_path", ""),
             "use_reference_image": config.get("use_reference_image", True),
+            "selected_model": config.get("selected_model", ""),
+            "steps": config.get("steps", 30),
+            "cfg": config.get("cfg", 7.5),
+            "sampler_name": config.get("sampler_name", "dpmpp_2m"),
+            "scheduler": config.get("scheduler", "karras"),
             "prompts": config.get("prompts", {})
         }
     except Exception as e:
@@ -495,6 +504,16 @@ async def update_settings(settings: SettingsUpdate):
         config["comfyui_path"] = settings.comfyui_path
     if settings.use_reference_image is not None:
         config["use_reference_image"] = settings.use_reference_image
+    if settings.selected_model is not None:
+        config["selected_model"] = settings.selected_model
+    if settings.steps is not None:
+        config["steps"] = settings.steps
+    if settings.cfg is not None:
+        config["cfg"] = settings.cfg
+    if settings.sampler_name is not None:
+        config["sampler_name"] = settings.sampler_name
+    if settings.scheduler is not None:
+        config["scheduler"] = settings.scheduler
     if settings.prompts is not None:
         config["prompts"] = settings.prompts
     
@@ -963,6 +982,10 @@ def prepare_workflow(template: dict, replacements: dict) -> dict:
     target_cut_num = replacements.get("cut_number", 1)
     target_width = replacements.get("width")
     target_height = replacements.get("height")
+    target_steps = replacements.get("steps")
+    target_cfg = replacements.get("cfg")
+    target_sampler = replacements.get("sampler_name")
+    target_scheduler = replacements.get("scheduler")
     
     for node_id, node in workflow.items():
         inputs = node.get("inputs", {})
@@ -976,9 +999,13 @@ def prepare_workflow(template: dict, replacements: dict) -> dict:
             if target_width: inputs["width"] = target_width
             if target_height: inputs["height"] = target_height
 
-        # Replace Seed in KSampler or similar
-        if target_seed is not None and "seed" in inputs:
-            inputs["seed"] = target_seed
+        # Replace Sampler Parameters (KSampler)
+        if node.get("class_type") == "KSampler":
+            if target_steps: inputs["steps"] = target_steps
+            if target_cfg: inputs["cfg"] = target_cfg
+            if target_sampler: inputs["sampler_name"] = target_sampler
+            if target_scheduler: inputs["scheduler"] = target_scheduler
+            if target_seed is not None: inputs["seed"] = target_seed
             
         # Replace placeholders in any string input
         for key, value in inputs.items():
@@ -1954,6 +1981,12 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
     generated_images = []
     cuts_data = params.get("cuts_data", [])
     
+    if not cuts_data:
+        yield create_sse_event({"type": "log", "message": "❌ 생성할 컷(Cut) 데이터가 없습니다. 스크립트 분석 단계에서 'AI 컷 나누기'를 완료했는지 확인해주세요."})
+        yield create_sse_event({"type": "error", "message": "Empty Cuts Data"})
+        yield create_sse_event({"type": "done"})
+        return
+
     for i, current_cut in enumerate(cuts_data):
         # [CONTROL] Check State
         if generation_state["status"] == "stopped":
@@ -2068,7 +2101,11 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                 "cut_number": i,
                 "ckpt_name": selected_model,
                 "width": params.get("resolution_w", 1920),
-                "height": params.get("resolution_h", 1080)
+                "height": params.get("resolution_h", 1080),
+                "steps": config.get("steps", 30),
+                "cfg": config.get("cfg", 7.5),
+                "sampler_name": config.get("sampler_name", "dpmpp_2m"),
+                "scheduler": config.get("scheduler", "karras")
             })
             
             # Queue Prompt

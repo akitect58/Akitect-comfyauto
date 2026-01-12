@@ -9,6 +9,11 @@ type Settings = {
     openai_api_key_set: boolean;
     comfyui_path: string;
     use_reference_image: boolean;
+    selected_model: string;
+    steps: number;
+    cfg: number;
+    sampler_name: string;
+    scheduler: string;
     prompts: {
         protagonist_prompt: string;
         draft_generation: string;
@@ -48,6 +53,10 @@ export default function SettingsView() {
     const [animationNegativePrompt, setAnimationNegativePrompt] = useState('');
     const [useReferenceImage, setUseReferenceImage] = useState(true);
     const [selectedModel, setSelectedModel] = useState('');
+    const [steps, setSteps] = useState(30);
+    const [cfg, setCfg] = useState(7.5);
+    const [samplerName, setSamplerName] = useState('dpmpp_2m');
+    const [scheduler, setScheduler] = useState('karras');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
 
     useEffect(() => {
@@ -104,6 +113,10 @@ export default function SettingsView() {
             setAnimationNegativePrompt(data.prompts?.negative_prompt_animation || '');
             setUseReferenceImage(data.use_reference_image !== false);
             setSelectedModel(data.selected_model || '');
+            setSteps(data.steps || 30);
+            setCfg(data.cfg || 7.5);
+            setSamplerName(data.sampler_name || 'dpmpp_2m');
+            setScheduler(data.scheduler || 'karras');
         } catch (e: any) {
             console.error("Failed to fetch settings:", e);
             setError(e.message || "백엔드 서버에 연결할 수 없습니다.");
@@ -113,6 +126,11 @@ export default function SettingsView() {
                 openai_api_key_set: false,
                 comfyui_path: '',
                 use_reference_image: true,
+                selected_model: '',
+                steps: 30,
+                cfg: 7.5,
+                sampler_name: 'dpmpp_2m',
+                scheduler: 'karras',
                 prompts: {} as any
             });
         } finally {
@@ -147,6 +165,11 @@ export default function SettingsView() {
             if (apiKey) {
                 payload.openai_api_key = apiKey;
             }
+
+            payload.steps = steps;
+            payload.cfg = cfg;
+            payload.sampler_name = samplerName;
+            payload.scheduler = scheduler;
 
             const res = await fetch('http://localhost:3501/api/settings', {
                 method: 'PUT',
@@ -346,6 +369,76 @@ export default function SettingsView() {
                                     className={`absolute w-5 h-5 bg-white rounded-full top-1 transition-all ${useReferenceImage ? 'left-8' : 'left-1'}`}
                                 />
                             </button>
+                        </div>
+                    </div>
+
+                    {/* Advanced Sampler Settings */}
+                    <div className="pt-4 border-t border-slate-800">
+                        <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                            <Icon icon="solar:settings-minimalistic-bold" className="text-indigo-500" />
+                            고급 샘플러 설정 (Advanced Sampler Settings)
+                        </h3>
+
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            {/* Steps */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Steps</label>
+                                <input
+                                    type="number"
+                                    value={steps}
+                                    onChange={(e) => setSteps(parseInt(e.target.value))}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+
+                            {/* CFG */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">CFG Scale</label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    value={cfg}
+                                    onChange={(e) => setCfg(parseFloat(e.target.value))}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+
+                            {/* Sampler Name */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sampler Name</label>
+                                <select
+                                    value={samplerName}
+                                    onChange={(e) => setSamplerName(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 appearance-none"
+                                >
+                                    <option value="euler">euler</option>
+                                    <option value="euler_ancestral">euler_ancestral</option>
+                                    <option value="heun">heun</option>
+                                    <option value="dpm_2">dpm_2</option>
+                                    <option value="dpmpp_2m">dpmpp_2m</option>
+                                    <option value="dpmpp_sde">dpmpp_sde</option>
+                                    <option value="dpmpp_2m_sde">dpmpp_2m_sde</option>
+                                    <option value="uni_pc">uni_pc</option>
+                                    <option value="lcm">lcm</option>
+                                </select>
+                            </div>
+
+                            {/* Scheduler */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Scheduler</label>
+                                <select
+                                    value={scheduler}
+                                    onChange={(e) => setScheduler(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 appearance-none"
+                                >
+                                    <option value="normal">normal</option>
+                                    <option value="karras">karras</option>
+                                    <option value="exponential">exponential</option>
+                                    <option value="sgm_uniform">sgm_uniform</option>
+                                    <option value="simple">simple</option>
+                                    <option value="ddim_uniform">ddim_uniform</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </motion.div>

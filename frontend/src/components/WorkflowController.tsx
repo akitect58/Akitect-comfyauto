@@ -514,6 +514,14 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
 
     // Step 2 -> Step 3: Generate first reference image (or skip if disabled)
     const startGeneration = async () => {
+        if (state.cuts.length === 0) {
+            alert(state.style === 'animation'
+                ? "이미지를 생성하기 전에 먼저 'AI 컷 나누기' 버튼을 눌러 스토리를 컷별로 나누어야 합니다."
+                : "생성할 스토리 정보가 없습니다. 이전 단계로 돌아가 스토리를 생성해 주세요."
+            );
+            return;
+        }
+
         // 1. Ensure we have the latest settings
         let currentUseRef = useReferenceImage;
         try {
@@ -1208,9 +1216,20 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                 <button onClick={prevStep} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl">
                                     ← 이전
                                 </button>
-                                <button onClick={startGeneration} className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-black rounded-2xl transition-all shadow-lg flex items-center gap-3">
-                                    <Icon icon="solar:play-bold" className="text-xl" /> 이미지 생성 시작
-                                </button>
+                                <div className="flex flex-col items-end gap-2">
+                                    <button
+                                        onClick={startGeneration}
+                                        disabled={state.cuts.length === 0}
+                                        className={`px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-black rounded-2xl transition-all shadow-lg flex items-center gap-3 ${state.cuts.length === 0 ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+                                    >
+                                        <Icon icon="solar:play-bold" className="text-xl" /> 이미지 생성 시작
+                                    </button>
+                                    {state.cuts.length === 0 && (
+                                        <span className="text-[10px] text-amber-500 font-bold animate-pulse">
+                                            {state.style === 'animation' ? '⚠️ "AI 컷 나누기"를 먼저 눌러주세요' : '⚠️ 스토리 데이터가 없습니다'}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </motion.div >
                     )
