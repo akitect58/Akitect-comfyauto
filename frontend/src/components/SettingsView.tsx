@@ -358,14 +358,14 @@ export default function SettingsView() {
                             <Icon icon="solar:user-bold" /> 주인공 프롬프트 (모든 스토리에 적용)
                         </label>
                         <p className="text-xs text-slate-500 mb-3">
-                            예: 20대 중반의 한국인 여성, 긴 검은 머리카락, 따뜻한 눈빛
+                            예: A majestic wild animal (wolf/fox/deer), detailed fur, expressive eyes
                         </p>
                         <textarea
                             value={protagonistPrompt}
                             onChange={(e) => setProtagonistPrompt(e.target.value)}
                             rows={2}
                             className="w-full bg-slate-950 border border-purple-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500 font-mono resize-none"
-                            placeholder="20대 중반의 한국인 여성, 긴 검은 머리카락, 따뜻한 눈빛, 자연스러운 메이크업, 캐주얼한 차림새"
+                            placeholder="A majestic golden eagle, hyperrealistic feathers, sharp gaze, national geographic style, 8k uhd"
                         />
                     </div>
 

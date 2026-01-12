@@ -962,8 +962,7 @@ async def generate_reference_image(req: ReferenceImageRequest):
     config = load_config()
     
     # Get prompts
-    # Get prompts
-    protagonist_prompt = config.get("prompts", {}).get("protagonist_prompt", "20대 중반의 한국인 여성")
+    protagonist_prompt = config.get("prompts", {}).get("protagonist_prompt", "A majestic wild animal")
     
     # Select prompts based on style
     if req.style == "animation":
@@ -1096,16 +1095,16 @@ async def generate_story(req: StoryRequest):
         await asyncio.sleep(2)
         cuts = []
         cut_descriptions = [
-            "이른 새벽, 안개가 자욱한 도로. 희미한 가로등 불빛 아래 한 여성이 걸어간다.",
-            "갑작스러운 충돌음. 그녀의 눈이 커지며 고개를 돌린다.",
-            "사고 현장. 뒤틀린 금속과 흩어진 유리 파편들.",
-            "떨리는 손으로 휴대폰을 꺼내는 그녀. 119를 누르지만 손가락이 굳어버린다.",
-            "멀리서 다가오는 인영. 누군가 사고 현장을 떠나고 있다.",
+            "새벽녘, 고요한 숲속. 이슬 맺힌 풀잎 사이로 한 마리의 야생 동물이 조심스레 발을 내딛는다.",
+            "갑작스러운 인기척. 귀를 쫑긋 세우고 주변을 경계하는 모습.",
+            "거친 숨소리와 함께 시작된 질주. 흙먼지가 피어오른다.",
+            "천적을 피해 낡은 나무 둥치 아래로 몸을 숨긴다. 긴장된 눈빛.",
+            "비가 그치고 드러난 무지개 아래, 다시 여정을 시작하는 뒷모습.",
         ]
         for i in range(1, total_cuts + 1):
             cuts.append({"cutNumber": i, "description": cut_descriptions[(i - 1) % len(cut_descriptions)] + f" (컷 {i})"})
         
-        character_prompt = "[Mock] 메인 캐릭터 - 30대 초반 한국인 여성, 단발 머리"
+        character_prompt = "[Mock] 메인 캐릭터 - 야생 동물(늑대/여우/사슴 등), 자연스러운 털 질감, 야생의 분위기"
         return {"success": True, "totalCuts": total_cuts, "cuts": cuts, "characterPrompt": character_prompt, "source": "mock"}
     
     # Real OpenAI API call
@@ -1116,7 +1115,7 @@ async def generate_story(req: StoryRequest):
         image_prompt_instruction = (
             "\n\n[중요 추가 지침] 각 컷에는 반드시 'imagePrompt' 필드를 포함하세요. "
             "'imagePrompt'는 Stable Diffusion 이미지 생성용 **상세 영문 프롬프트**입니다. "
-            "예: \"A woman kneeling in a collapsing shelter during a fierce storm, dramatic shadows, photorealistic, 8K UHD\""
+            "예: \"A lone wolf standing on a rocky outcrop, howling at the moon, mist swirling, photorealistic, 8K UHD\""
         )
         
         if not system_prompt:
@@ -1395,7 +1394,7 @@ async def regenerate_cut(req: RegenerateCutRequest):
         # Always enforce imagePrompt requirement
         system_prompt += (
             "\n\n[CRITICAL] You MUST include 'imagePrompt' field with a detailed ENGLISH description "
-            "optimized for Stable Diffusion image generation. Example: \"A woman kneeling in a collapsing shelter...\""
+            "optimized for Stable Diffusion image generation. Example: \"A red fox leaping through snow, muscles tensed, powder flying...\""
         )
         
         # Replace template variables
@@ -1505,7 +1504,7 @@ def calculate_parameters(mode: str, concept: str, cuts: int, selected_title: str
         "mode_name": "LONG_FORM" if mode == "Long Form (16:9)" else "SHORT_FORM",
         "total_cuts": cuts,
         "concept": concept,
-        "image_filename": "korean_woman_wide.png" if mode == "Long Form (16:9)" else "korean_woman_tall.png",
+        "image_filename": "animal_protagonist_wide.png" if mode == "Long Form (16:9)" else "animal_protagonist_tall.png",
         "selected_title": selected_title
     }
     
