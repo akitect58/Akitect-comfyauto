@@ -258,15 +258,10 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
 
 
     // Delete saved item
-    const deleteItem = (index: number) => {
-        const key = saveType === 'story' ? 'akitect_stories_list' : 'akitect_drafts_list';
-        // Decide which list to modify based on saveType (delete usually targets one type active in view, 
-        // OR we need to pass type to deleteItem if we allow delete from split view. 
-        // For 'delete' mode, let's keep it simple: the modal probably shows one list based on 'saveType' used to open it, 
-        // OR we can split 'delete' view too? The user request only mentioned 'Load' split view.
-        // Let's assume Delete mode stays single-list for now or follows saveType passed in openDraftsModal.
+    const deleteItem = (index: number, type: 'draft' | 'story' = saveType) => {
+        const key = type === 'story' ? 'akitect_stories_list' : 'akitect_drafts_list';
 
-        const list = saveType === 'story' ? [...savedStories] : [...savedDrafts];
+        const list = type === 'story' ? [...savedStories] : [...savedDrafts];
         list.splice(index, 1);
 
         localStorage.setItem(key, JSON.stringify(list));
@@ -1522,12 +1517,20 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                                                         <h5 className="text-white font-bold text-sm truncate">{item.title}</h5>
                                                                         <p className="text-xs text-slate-500">{new Date(item.savedAt).toLocaleDateString()} · {item.drafts?.length || 0}개</p>
                                                                     </div>
-                                                                    <button
-                                                                        onClick={() => loadItem(item, 'draft')}
-                                                                        className="w-full py-2 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white text-xs font-bold rounded-lg transition-all"
-                                                                    >
-                                                                        불러오기
-                                                                    </button>
+                                                                    <div className="flex gap-2">
+                                                                        <button
+                                                                            onClick={() => loadItem(item, 'draft')}
+                                                                            className="flex-1 py-2 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white text-xs font-bold rounded-lg transition-all"
+                                                                        >
+                                                                            불러오기
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); if (confirm('정말 삭제하시겠습니까?')) deleteItem(i, 'draft'); }}
+                                                                            className="px-3 py-2 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded-lg transition-all"
+                                                                        >
+                                                                            <Icon icon="solar:trash-bin-trash-bold" />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ))
                                                         )}
@@ -1551,12 +1554,20 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                                                             {new Date(item.savedAt).toLocaleDateString()} · {item.mode === 'long' ? 'Long' : 'Short'}
                                                                         </p>
                                                                     </div>
-                                                                    <button
-                                                                        onClick={() => loadItem(item, 'story')}
-                                                                        className="w-full py-2 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold rounded-lg transition-all"
-                                                                    >
-                                                                        불러오기
-                                                                    </button>
+                                                                    <div className="flex gap-2">
+                                                                        <button
+                                                                            onClick={() => loadItem(item, 'story')}
+                                                                            className="flex-1 py-2 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold rounded-lg transition-all"
+                                                                        >
+                                                                            불러오기
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); if (confirm('정말 삭제하시겠습니까?')) deleteItem(i, 'story'); }}
+                                                                            className="px-3 py-2 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded-lg transition-all"
+                                                                        >
+                                                                            <Icon icon="solar:trash-bin-trash-bold" />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ))
                                                         )}
@@ -1565,29 +1576,47 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                             </div>
                                         ) : (
                                             /* Single List View for Delete (based on saveType) */
-                                            <div className="max-h-80 overflow-y-auto space-y-2">
-                                                {(saveType === 'draft' ? savedDrafts : savedStories).length === 0 ? (
-                                                    <div className="text-center py-8 text-slate-500">
-                                                        <p>저장된 {saveType === 'draft' ? '초안이' : '스토리가'} 없습니다.</p>
-                                                    </div>
-                                                ) : (
-                                                    (saveType === 'draft' ? savedDrafts : savedStories).map((item, i) => (
-                                                        <div key={i} className="flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-xl p-3 hover:border-slate-500 transition-all">
-                                                            <div className="flex-1 min-w-0">
-                                                                <h4 className="text-white font-bold text-sm truncate">{item.title}</h4>
-                                                                <p className="text-xs text-slate-500">
-                                                                    {new Date(item.savedAt).toLocaleString()}
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => deleteItem(i)}
-                                                                className="ml-3 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-lg transition-all"
-                                                            >
-                                                                삭제
-                                                            </button>
+                                            <div className="space-y-4">
+                                                {/* Tab Switcher for Delete Mode */}
+                                                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+                                                    <button
+                                                        onClick={() => setSaveType('draft')}
+                                                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${saveType === 'draft' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                                    >
+                                                        <Icon icon="solar:document-text-bold" /> 초안 ({savedDrafts.length})
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setSaveType('story')}
+                                                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${saveType === 'story' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                                    >
+                                                        <Icon icon="solar:clapperboard-play-bold" /> 스토리 ({savedStories.length})
+                                                    </button>
+                                                </div>
+
+                                                <div className="max-h-80 overflow-y-auto space-y-2">
+                                                    {(saveType === 'draft' ? savedDrafts : savedStories).length === 0 ? (
+                                                        <div className="text-center py-8 text-slate-500">
+                                                            <p>저장된 {saveType === 'draft' ? '초안이' : '스토리가'} 없습니다.</p>
                                                         </div>
-                                                    ))
-                                                )}
+                                                    ) : (
+                                                        (saveType === 'draft' ? savedDrafts : savedStories).map((item, i) => (
+                                                            <div key={i} className="flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-xl p-3 hover:border-slate-500 transition-all">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h4 className="text-white font-bold text-sm truncate">{item.title}</h4>
+                                                                    <p className="text-xs text-slate-500">
+                                                                        {new Date(item.savedAt).toLocaleString()}
+                                                                    </p>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => { if (confirm('정말 삭제하시겠습니까?')) deleteItem(i, saveType); }}
+                                                                    className="ml-3 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-lg transition-all"
+                                                                >
+                                                                    삭제
+                                                                </button>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
 
