@@ -1299,6 +1299,8 @@ async def story_generation_stream(
             return
 
         # Real OpenAI Streaming
+        # Real OpenAI Streaming
+        try:
             print("Starting Sequential Chain Prompting (10 cuts per chunk)...")
             
             chunk_size = 10
