@@ -1132,10 +1132,20 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                         <div className="absolute bottom-4 right-4">
                                             <button
                                                 onClick={parseScript}
-                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all"
+                                                disabled={state.isProcessing}
+                                                className={`px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all ${state.isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
-                                                <Icon icon="solar:magic-stick-3-bold-duotone" />
-                                                AI 컷 나누기
+                                                {state.isProcessing ? (
+                                                    <>
+                                                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                        분석 중...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Icon icon="solar:magic-stick-3-bold-duotone" />
+                                                        AI 컷 나누기
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
                                     )}

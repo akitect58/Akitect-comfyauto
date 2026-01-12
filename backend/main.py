@@ -29,7 +29,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -451,6 +451,7 @@ app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 # ==========================================
 
 class SettingsUpdate(BaseModel):
+    openai_api_key: str | None = None
     comfyui_path: str | None = None
     use_reference_image: bool | None = None
     selected_model: str | None = None
