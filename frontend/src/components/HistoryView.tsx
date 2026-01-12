@@ -17,7 +17,19 @@ type HistoryItem = {
 type ProjectDetail = {
     title: string;
     assets: string[];
-    metadata: any;
+    metadata: {
+        mode: string;
+        cuts_data?: Array<{
+            cutNumber: number;
+            description: string;
+            imagePrompt: string;
+            sfxGuide?: string;
+            filename?: string;
+            emotionLevel?: number;
+            characterTag?: string;
+            physicsDetail?: string;
+        }>;
+    };
 };
 
 export default function HistoryView() {
@@ -321,24 +333,76 @@ export default function HistoryView() {
                             </div>
 
                             <div className="flex-1 overflow-y-auto w-full p-8 custom-scrollbar bg-slate-950/50">
-                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-                                    {selectedProject.assets.map((asset, idx) => (
-                                        <motion.div
-                                            key={idx}
-                                            initial={{ opacity: 0, scale: 0.8 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            className="group relative aspect-square bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-blue-500/50 transition-all cursor-zoom-in"
-                                        >
-                                            <img
-                                                src={`http://localhost:3501${asset}`}
-                                                alt={`Cut ${idx}`}
-                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                            />
-                                            <div className="absolute inset-0 bg-black/60 group-hover:bg-transparent transition-colors flex items-center justify-center">
-                                                <span className="text-[10px] font-mono text-white opacity-40 group-hover:opacity-100 font-bold">#{String(idx + 1).padStart(3, '0')}</span>
-                                            </div>
-                                        </motion.div>
-                                    ))}
+                                <div className="space-y-12">
+                                    {selectedProject.assets.map((asset, idx) => {
+                                        // Find matching cut data
+                                        // Asset path format: /outputs/EncodedFolder/001.png
+                                        const filename = asset.split('/').pop();
+                                        const cutData = selectedProject.metadata.cuts_data?.find(c => c.filename === filename || (c.cutNumber === idx + 1));
+
+                                        return (
+                                            <motion.div
+                                                key={idx}
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="flex flex-col md:flex-row gap-6 bg-slate-900/50 p-6 rounded-3xl border border-slate-800"
+                                            >
+                                                {/* Image */}
+                                                <div className="w-full md:w-1/3 max-w-sm shrink-0">
+                                                    <div className="aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-700">
+                                                        <img
+                                                            src={`http://localhost:3501${asset}`}
+                                                            alt={`Cut ${idx + 1}`}
+                                                            className="w-full h-full object-contain"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Prompts & Data */}
+                                                <div className="flex-1 space-y-4">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <span className="text-xl font-black text-white">#{String(idx + 1).padStart(3, '0')}</span>
+                                                        <span className="px-2 py-1 bg-slate-800 text-slate-300 text-xs rounded-lg border border-slate-700 font-bold">
+                                                            {cutData?.emotionLevel ? `Emotion: ${cutData.emotionLevel}` : 'Scene'}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Korean Description */}
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">SCENE DESCRIPTION (KR)</h4>
+                                                        <p className="text-white font-medium">{cutData?.description || "No description available"}</p>
+                                                    </div>
+
+                                                    {/* English Image Prompt */}
+                                                    <div className="bg-black/30 p-4 rounded-xl border border-slate-800/50">
+                                                        <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                            <Icon icon="solar:gallery-wide-bold" />
+                                                            SDXL Image Prompt
+                                                        </h4>
+                                                        <p className="text-slate-400 text-xs font-mono leading-relaxed select-all">
+                                                            {cutData?.imagePrompt || "No prompt data"}
+                                                        </p>
+                                                    </div>
+
+                                                    {/* Veo / Video Prompt (if available) - Assuming sfxGuide or constructing logic */}
+                                                    {/* If we stored Veo prompt explicitly we could show it, otherwise show components */}
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div className="bg-slate-800/30 p-3 rounded-lg border border-slate-800/50">
+                                                            <h5 className="text-[10px] font-bold text-slate-500 mb-1">CHARACTER TAG</h5>
+                                                            <p className="text-slate-300 text-xs">{cutData?.characterTag || "-"}</p>
+                                                        </div>
+                                                        <div className="bg-slate-800/30 p-3 rounded-lg border border-slate-800/50">
+                                                            <h5 className="text-[10px] font-bold text-slate-500 mb-1">PHYSICS / SFX</h5>
+                                                            <p className="text-slate-300 text-xs">
+                                                                {cutData?.physicsDetail || "-"}<br />
+                                                                <span className="text-slate-500 text-[10px] pt-1 block">{cutData?.sfxGuide}</span>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </motion.div>

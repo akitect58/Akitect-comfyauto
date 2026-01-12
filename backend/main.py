@@ -337,56 +337,45 @@ Use "the [animal type]" or "the character" - actual appearance comes from master
 [OUTPUT]
 Single paragraph English prompt, no line breaks, optimized for photorealistic generation.''',
 
-    "veo_video": '''You are a VEO 3.1 video prompt specialist following the 5-element formula.
-
-[SCENE INPUT]
-Cut Number: {{cut_number}}
+    "veo_video": '''You are a VEO 3.1 video prompt specialist.
+    
+[INPUT DATA]
+Cut: {{cut_number}}
 Description: {{scene_description}}
-Character Tag: {{character_tag}}
-Emotion Level: {{emotion_level}}/10
-Physics Detail: {{physics_detail}}
-SFX Guide: {{sfx_guide}}
+Character: {{character_tag}}
+Emotion: {{emotion_level}}/10
+Physics: {{physics_detail}}
+SFX: {{sfx_guide}}
 
-[5-ELEMENT FORMULA - Follow this exact order:]
+[STRUCTURE - 5-ELEMENT FORMULA (STRICT ORDER)]
+1. Cinematography: Lens, Angle, Movement
+2. Subject: Visuals, Costume, Texture
+3. Action: Specific movement (Present Continuous)
+4. Context: Location, Time, Weather, Atmosphere (Dirty Frame)
+5. Style & Ambiance: Lighting, Color, SFX (No BGM/Dialogue)
 
-1. CINEMATOGRAPHY
-   - Lens by emotion: 1-4->35mm wide | 5-7->50mm medium | 8-10->85mm+ tight
-   - Camera height: Animals->ground-level | Humans->eye-level
-   - Movement: static | slow_pan | tracking | handheld | dolly | crane
-   
-2. SUBJECT
-   - Reference as "{{character_tag}}" 
-   - Current physical state, posture, visible condition
-   
-3. ACTION
-   - Use present continuous tense
-   - Include physics verbs: pressing, gripping, pushing, stepping, leaning
-   - Specify contact points and pressure
-   
-4. CONTEXT
-   - Location specifics, time of day
-   - Weather particles between camera and subject (dirty frame technique)
-   - Background movement/elements
-   
-5. STYLE & AMBIANCE
-   - Lighting quality and direction
-   - Color temperature (warm/cool/neutral)
-   - SFX only (NO music, NO dialogue): {{sfx_guide}}
+[CINEMATIC LOGIC - AI MUST ADAPT]
+- **Lens Control**:
+  - Emotion 1-4: 35mm Wide (Context/Calm)
+  - Emotion 5-7: 50mm Medium (Story/Focus)
+  - Emotion 8-10: 85mm+ Close-up (Intense/Crisis) (Highlight contact points 50%+)
+- **Camera Movement**:
+  - Static/Pan (Calm) -> Handheld/Tracking (Tension/Chase) -> Drone/High Angle (Isolation/Intro)
+- **Height**:
+  - Animal: Ground-level (Eye-to-eye)
+  - Human: Eye-level
+- **Atmosphere (Dirty Frame)**:
+  - If Rain/Fire/Dust: Describe particles (Ash, Raindrops, Smoke) between lens and subject.
+  - Short focus distance for immersive depth.
 
-[MOTION CONTINUITY]
-Previous cut ends with: {{previous_action}}
-This cut should connect naturally from that state.
+[AUDIO RULES]
+- **SFX ONLY**: Footsteps, Rain, Roar, Rustle.
+- **FORBIDDEN**: "ominous music", "voiceover", "dialogue".
 
-[FORBIDDEN]
-- Background music references
-- Dialogue or speech
-- Text overlays
-- Unrealistic camera movements
+[OUTPUT FORMAT]
+Single paragraph English prompt. End with [SFX: ...]. NO intro/outro.''',
 
-[OUTPUT]
-Single paragraph English prompt following 5-element order, include [SFX: ...] tag at end.''',
-
-    "title_generation": '''You are a viral content marketing specialist for English-speaking audiences.
+    "title_generation": '''You are a viral content marketing specialist for Korean audiences.
 
 [STORY CONTEXT]
 Title: {{story_title}}
@@ -402,20 +391,21 @@ Emotional Arc: {{emotional_arc}}
 - mystery: Curiosity-driven, question-based, reveal-focused
 
 [TITLE FORMULAS TO USE]
-1. Tension + Time: "48 Hours: The Final Stand"
-2. Location + Crisis: "Lost in the Abyss: An Unlikely Escape"
-3. Personal Stake: "The Secret That Changed Everything"
-4. High Pursuit: "Across the Scorched Earth"
-5. Triumph: "Against All Odds: The Rise from Shadows"
+1. Tension + Time: "48시간: 마지막 승부"
+2. Location + Crisis: "심연 속으로: 기적의 탈출"
+3. Personal Stake: "모든 것을 바꾼 비밀"
+4. High Pursuit: "불타는 대지 위에서"
+5. Triumph: "그럼에도 불구하고: 어둠 속의 빛"
 
 [REQUIREMENTS]
+- **LANGUAGE: KOREAN (Must be in Korean)**
 - Maximum 8 words per title
 - Must work as YouTube/social video title
 - Include emotional hook
-- Avoid clichés like "Amazing", "Unbelievable", "You Won't Believe"
+- Avoid clichés like "Amazing", "Unbelievable"
 
 [OUTPUT FORMAT]
-JSON array: [{"title": "English Title", "style": "category", "hook": "Why this works"}]''',
+JSON array: [{"title": "Korean Title", "style": "category", "hook": "Why this works"}]''',
 
     "negative_prompt": "" 
 }
@@ -2028,13 +2018,33 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
             await asyncio.sleep(1)
 
     # 4. Finalize
+    import urllib.parse
+    first_image_encoded = urllib.parse.quote(generated_images[0]) if generated_images else ""
+    
+    # [METADATA UPDATE] Save full cuts info including prompts
+    # Re-construct full cuts list with generated filenames
+    final_cuts_metadata = []
+    cuts_data = params.get("cuts_data", [])
+    
+    for i, cut in enumerate(cuts_data):
+        # Find if this cut was generated
+        cut_num = cut.get("cutNumber", i+1)
+        # Try to find matching image
+        img_name = f"{cut_num:03d}.png"
+        if img_name in generated_images:
+            cut_copy = cut.copy()
+            cut_copy["filename"] = img_name
+            final_cuts_metadata.append(cut_copy)
+
     result_data = {
         "title": params['selected_title'] or topic,
         "mode": params['mode_name'],
         "resolution": f"{params['resolution_w']}x{params['resolution_h']}",
         "cuts": len(generated_images),
         "created_at": get_time(),
-        "image_url": f"/outputs/{folder_name}/{generated_images[0]}" if generated_images else ""
+        "image_url": f"/outputs/{urllib.parse.quote(folder_name)}/{first_image_encoded}" if generated_images else "",
+        "assets": [f"/outputs/{urllib.parse.quote(folder_name)}/{img}" for img in generated_images],
+        "cuts_data": final_cuts_metadata # Save prompts here
     }
     
     with open(os.path.join(project_dir, "metadata.json"), 'w') as f:
