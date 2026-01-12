@@ -44,21 +44,20 @@ if not os.path.exists(OUTPUTS_DIR):
 
 # Default prompt templates with template variables: {{count}}, {{category}}, {{cut_number}}, {{character_tag}}, {{emotion_level}}, {{previous_summary}}, {{protagonist}}
 DEFAULT_PROMPTS = {
-    "protagonist_prompt": '''20대 중반의 한국인 여성, 긴 검은 머리카락, 따뜻한 눈빛, 자연스러운 메이크업, 캐주얼한 차림새''',
+    "protagonist_prompt": '''A majestic wild animal (specific species determined by story), detailed fur/skin texture, bright expressive eyes, natural lighting, photorealistic, 8k uhd, national geographic style''',
     
     "style_animation": '''A vertical 16:9 semi-realistic digital portrait styled as a classic Korean folk tale illustration. It depicts {{subject_description}}. The background is a dreamy, misty landscape of rolling hills, ancient trees, and blooming wild plants, rendered with soft brushstrokes and a warm, golden-hour light that creates a gentle glow and a sense of mystery. The overall feel is calm, traditional, and mythical, with a textured, aged paper effect. --ar 9:16''',
 
-    "negative_prompt_photoreal": '''cgi, 3d render, cartoon, anime, illustration, painting, drawing, art, 
-digital art, concept art, artstation, deviantart,
-vibrant colors, oversaturated, neon, glowing,
-unnatural textures, perfect grooming, studio backdrop,
-perfect lighting, studio lighting, rim lighting, 
-fantasy, sci-fi, cyberpunk, magical, supernatural, mythical,
-unrealistic proportions, anthropomorphic, talking characters,
-blurry, low quality, low resolution, pixelated,
-watermark, signature, text, logo, banner,
-collage, multiple frames, split screen, border,
-oversaturated, HDR, overprocessed, AI artifacts, 
+    "negative_prompt_photoreal": '''human, person, man, woman, child, clothes, clothing, dress, shirt, pants, 
+anthropomorphic, standing on two legs, human hands, human face, talking animal, 
+cgi, 3d render, cartoon, anime, illustration, painting, drawing, art, 
+digital art, concept art, artstation, 
+vibrant colors, oversaturated, neon, glowing, 
+make-up, accessories, collar, leash, pet, domestic (unless specified), 
+unrealistic proportions, mutant, extra limbs, 
+blurry, low quality, low resolution, pixelated, 
+watermark, signature, text, logo, banner, 
+collage, multiple frames, split screen, border, 
 smooth skin, plastic texture, wax figure''',
 
     "negative_prompt_animation": '''modern clothing, western features, exaggerated cartoon style, sharp photorealism, harsh lighting, overly saturated colors, text, watermarks, 
@@ -98,29 +97,46 @@ return JSON object:
   "characterPrompt": "Detailed description of the main character extracted from text"
 }''',
 
-    "formatted_draft_generation": '''You are a professional video storyteller.
+    "formatted_draft_generation": '''You are a professional video storyteller specializing in high-stakes nature documentaries and realistic animal dramas.
 [INPUT]
-Category: {{category}}
+Category: {{category}} (Select one if not specified: 1.Accident/Injury 2.Natural Disaster 3.Abuse/Neglect 4.Heroic Act 5.Urban Isolation 6.Abandonment 7.Maternal Love 8.Disability/Old Age 9.Interspecies Friendship 10.Companion to Socially Isolated)
 Protagonist: {{protagonist}}
 
 [TASK]
-Generate 10 distinct story drafts.
+Generate 10 distinct story drafts. Each must be a 'Live-Action Only' realistic scenario.
 
-[OUTPUT]
-JSON array of objects with id, title, summary, theme, emotionalArc, visualStyle.
-Ensure title and summary are in Korean.''',
+[OUTPUT FORMAT]
+JSON array of objects:
+{
+  "id": 1,
+  "title": "Korean Title",
+  "summary": "Korean Summary (~500 chars, inclusive of Introduction, Development, Turn, Conclusion)",
+  "theme": "Survival/Bonding/etc",
+  "atmosphere": "Detailed description of the mood (e.g., 'Rain-soaked grey city, cold metallic feel, muddy water rising')",
+  "emotionalArc": "Despair -> Hope",
+  "visualStyle": "Handheld camera, Natural lighting, High ISO grain"
+}
+Ensure title and summary land the emotional impact of the chosen category.''',
 
-    "draft_generation": '''You are a professional video storyteller.
+    "draft_generation": '''You are a professional video storyteller specializing in high-stakes nature documentaries and realistic animal dramas.
 [INPUT]
-Category: {{category}}
+Category: {{category}} (Select one if not specified: 1.Accident/Injury 2.Natural Disaster 3.Abuse/Neglect 4.Heroic Act 5.Urban Isolation 6.Abandonment 7.Maternal Love 8.Disability/Old Age 9.Interspecies Friendship 10.Companion to Socially Isolated)
 Protagonist: {{protagonist}}
 
 [TASK]
-Generate {{count}} distinct story drafts.
+Generate {{count}} distinct story drafts. Each must be a 'Live-Action Only' realistic scenario.
 
-[OUTPUT]
-JSON array of objects with id, title, summary, theme, emotionalArc, visualStyle.
-Ensure title and summary are in Korean.''',
+[OUTPUT FORMAT]
+JSON array of objects:
+{
+  "id": 1,
+  "title": "Korean Title",
+  "summary": "Korean Summary (~500 chars, inclusive of Introduction, Development, Turn, Conclusion)",
+  "theme": "Survival/Bonding/etc",
+  "atmosphere": "Detailed description of the mood",
+  "emotionalArc": "Despair -> Hope",
+  "visualStyle": "Handheld camera, Natural lighting, High ISO grain"
+}''',
 
     "story_confirmation": '''You are a professional video production screenwriter specialized in high-impact narrative storytelling.
 
@@ -130,25 +146,27 @@ Expand the selected story draft into exactly {{cut_count}} detailed cuts for vid
 [STORY CONTEXT]
 Title: {{story_title}}
 Summary: {{story_summary}}
+Atmosphere: {{atmosphere}}
 Character Tag: {{character_tag}}
 
 [CORE RULES]
-1. MASTER CHARACTER TAG: Every cut MUST start with "{{character_tag}}" in the characterTag field
-2. PHYSICS LOGIC: Specify physical interactions with concrete verbs (Grasping, Pushing, Stepping, Pressing)
-3. HOOKING: Place the most dramatic scene in cuts 1-5 to maximize engagement
-4. CHAIN PROMPTING: Summarize previous 10 cuts before generating next batch
+1. MASTER CHARACTER TAG: Every cut MUST start with "{{character_tag}}" in the characterTag field.
+2. PHYSICS LOGIC: Specify physical interactions (Pressing, Grasping, Stepping) with surface details.
+3. TIMING CONTROL: Describe the 'MOMENT BEFORE' the action (e.g., 'poised to jump', 'about to bark'). NEVER describe the action in mid-air/mid-motion.
+4. CHAIN PROMPTING: Review previous cuts to ensure continuity.
 
 [CUT STRUCTURE - Each cut requires:]
 - cutNumber: Sequential number (1-{{cut_count}})
-- description: Scene summary in Korean (2-3 sentences)
-- characterTag: "{{character_tag}}" (MUST be identical across all cuts)
-- emotionLevel: 1-10 scale (1=calm, 10=peak crisis)
-- cameraAngle: ground_level | eye_level | high_angle | aerial | dutch_angle
-- lightingCondition: natural_daylight | golden_hour | overcast | night | artificial | dramatic_shadows
-- weatherAtmosphere: clear | rain | fog | snow | storm | dust | smoke
-- physicsDetail: Specific physical interaction description
-- sfxGuide: Sound design note (distance: near=crisp, far=muffled)
-- transitionHint: cut | dissolve | fade | match_cut
+- description: Scene summary in Korean.
+- imagePrompt: **CRITICAL** Detailed ENGLISH prompt for Stable Diffusion. MUST follow this format:
+  "[Master Character Description], [Action/Pose: poised to..., preparing to...], [Environment], [Lighting: Natural/Dramatic], [Camera: 35mm/85mm, Angle], [Atmosphere: Rain/Dust/Fog], [Tech: 8k uhd, photorealistic, raw footage]"
+- characterTag: "{{character_tag}}"
+- emotionLevel: 1-10 scale
+- cameraAngle: ground_level (for animals) | eye_level | high_angle | drone_shot
+- lightingCondition: natural_daylight | golden_hour | overcast | night | dramatic_shadows
+- physicsDetail: Specific interaction (e.g., "Paws pressing into soft mud", "Claws gripping the rusty metal")
+- sfxGuide: Sound notes (Distance: Near/Far, e.g., "Muffled rain sound", "Crisp twig snap")
+- transitionHint: cut | dissolve | fade
 
 [PACING GUIDE]
 - Cuts 1-5: HOOK - Most dramatic/tense moment (start in media res)
@@ -187,32 +205,50 @@ Current Emotion Level Range: {{emotion_range}}
 [OUTPUT]
 Generate a single cut object with all required fields maintaining story coherence.''',
 
-    "master_character": '''You are a photorealistic image prompt specialist for SDXL/FLUX models.
+    "master_character": '''You are a photorealistic image prompt specialist.
 
 [TASK]
-Create a master character prompt that will be used across {{cut_count}} images for visual consistency.
+Create a single 'Master Character Prompt' that defines the protagonist's specialized visual DNA.
 
-[CHARACTER INPUT]
-{{character_description}}
+[INPUT]
+Character Info: {{character_description}}
 
-[FOCUS ELEMENTS - Be extremely specific:]
-1. BODY: Exact breed/species, size, build, age indicators, posture tendency
-2. FUR/SKIN: Color (use specific terms like "russet", "cream", "charcoal"), pattern, texture, sheen, condition (matted, clean, wet)
-3. DISTINGUISHING MARKS: Scars, patches, unique colorations, missing fur areas
-4. ACCESSORIES: Collar details (color, material, condition), tags, clothing if any
-5. EXPRESSION BASELINE: Default ear position, eye characteristics, muzzle details
+[FOCUS]
+1. SPECIES/BREED: Exact definition.
+2. TEXTURE: Fur/Skin details (matted, wet, scarred, fluffy).
+3. MARKINGS: Unique visual identifiers (torn ear, specific patch).
+4. ITEMS: Collar (color/texture), harness (if applicable).
 
-[FORBIDDEN]
-- NO background descriptions
-- NO action/movement descriptions
-- NO lighting descriptions
-- NO emotional states
-
-[STYLE KEYWORDS TO INCLUDE]
-photorealistic, 8K UHD, hyperdetailed fur texture, subsurface scattering, shot on Canon EOS R5, 85mm f/1.4
+[RESTRICTIONS]
+- NO background.
+- NO action.
+- NO lighting.
 
 [OUTPUT]
-Single paragraph, English only, comma-separated descriptors, optimized for SDXL/FLUX.''',
+Single paragraph, English only. Comma-separated descriptors. Optimized for SDXL/RealVisXL.''',
+
+    "veo_video": '''You are a Veo 3.1 Prompt Specialist. Convert the scene data into the strict 5-Element Formula.
+
+[INPUT]
+Description: {{scene_description}}
+Physics: {{physics_detail}}
+SFX: {{sfx_guide}}
+Emotion: {{emotion_level}}
+
+[5-ELEMENT FORMULA]
+1. CINEMATOGRAPHY: 
+   - Emot 1-4: 35mm Wide
+   - Emot 5-7: 50mm Medium
+   - Emot 8-10: 85mm+ Close-up
+   - Angle: Ground-level (for animal)
+   - Move: Static/Pan/Handheld (based on tension)
+2. SUBJECT: "{{character_tag}}" (Do not re-describe appearance, assume IP-Adapter handles it). State POSTURE/STATE only.
+3. ACTION: Present continuous. Use physics verbs (Pressing against, Stepping on).
+4. CONTEXT: Location, Weather, 'Dirty Frame' elements (rain, dust between lens and subject).
+5. STYLE & AMBIANCE: Natural lighting, Raw footage, High ISO grain. [SFX: {{sfx_guide}}]
+
+[OUTPUT]
+One paragraph. English. NO intro/outro.''',
 
     "scene_image": '''You are converting cinematic scene descriptions into SDXL/FLUX image generation prompts.
 
@@ -687,116 +723,111 @@ async def regenerate_draft(req: RegenerateDraftRequest):
 # Parallel version - 10 API calls at once
 @app.get("/api/workflow/drafts/parallel")
 async def generate_drafts_parallel(mode: str = "long", category: str = None, customInput: str = None):
-    """Parallel version: Generate 10 story drafts with 10 separate streaming API calls"""
+    """
+    Serial version (formerly parallel): Generate 10 story drafts sequentially.
+    Feeds previous summaries into the next prompt to ensure diversity.
+    """
     config = load_config()
     client = get_openai_client()
     
     async def event_generator():
         if not client:
-            # Mock parallel simulation with streaming effect
+            # Mock serial simulation
+            previous_mock_summaries = []
             for i in range(10):
                 draft_id = i + 1
-                mock_text = f"Mock 스토리 #{draft_id} 생성 중... 병렬 처리 데모입니다."
+                mock_text = f"Mock 스토리 #{draft_id} 생성 중... (직렬 처리: 이전 {len(previous_mock_summaries)}개 참고)"
+                
+                # Simulate streaming
                 for char in mock_text:
                     yield {"event": "delta", "data": json.dumps({"draft_id": draft_id, "text": char})}
                     await asyncio.sleep(0.02)
-                yield {"event": "draft", "data": json.dumps({
+                
+                # Draft Complete
+                draft_data = {
                     "id": draft_id,
                     "title": f"Mock Story {draft_id}",
                     "summary": mock_text,
                     "theme": "mock"
-                })}
-            yield {"event": "complete", "data": json.dumps({"total": 10, "source": "mock"})}
+                }
+                yield {"event": "draft", "data": json.dumps(draft_data)}
+                previous_mock_summaries.append(mock_text)
+                
+            yield {"event": "complete", "data": json.dumps({"total": 10, "source": "mock_serial"})}
             return
         
         try:
             protagonist_prompt = config.get("prompts", {}).get("protagonist_prompt", "20대 중반의 한국인 여성")
-            base_prompt = config.get("prompts", {}).get("draft_generation", "스토리 작가입니다.")
-            base_prompt = base_prompt.replace("{{protagonist}}", protagonist_prompt)
-            base_prompt = base_prompt.replace("{{category}}", category or "ALL")
+            base_prompt_template = config.get("prompts", {}).get("draft_generation", "스토리 작가입니다.")
+            base_prompt_template = base_prompt_template.replace("{{protagonist}}", protagonist_prompt)
+            base_prompt_template = base_prompt_template.replace("{{category}}", category or "ALL")
             
             user_input = customInput if customInput else f"카테고리: {category}"
-            
-            # Queue to collect streaming events
-            event_queue = asyncio.Queue()
-            completed_count = [0]
-            
-            def sync_stream_single_draft(draft_id: int, queue_put):
-                """Synchronous function to stream a single draft (runs in thread)"""
+            previous_summaries = []
+
+            for i in range(10):
+                draft_id = i + 1
+                
+                # Construct Prompt with Context
+                current_prompt = base_prompt_template.replace("{{count}}", "1")
+                current_prompt += f"\n\n지금 생성할 초안 번호: {draft_id}/10"
+                
+                if previous_summaries:
+                    current_prompt += "\n\n[이전에 생성된 초안들 (중복 회피용)]"
+                    for idx, summary in enumerate(previous_summaries):
+                        # Limit summary length to save tokens if needed, though summaries are usually short
+                        current_prompt += f"\n- {idx+1}. {summary[:100]}..."
+                    current_prompt += "\n\n[지시사항] 위 안들과는 소재, 전개, 분위기가 **완전히 다른** 새로운 이야기를 만드세요. 겹치는 설정이 없도록 하세요."
+                
+                current_prompt += "\n반드시 단일 객체만 반환: {\"id\": " + str(draft_id) + ", \"title\": \"...\", \"summary\": \"...\", \"theme\": \"...\"}"
+                current_prompt += "\n[중요] summary와 title 모두 한국어로 작성하세요."
+
                 try:
-                    single_prompt = base_prompt.replace("{{count}}", "1")
-                    single_prompt += f"\n\n지금 생성할 초안 번호: {draft_id}/10"
-                    single_prompt += "\n반드시 단일 객체만 반환: {\"id\": " + str(draft_id) + ", \"title\": \"...\", \"summary\": \"...\", \"theme\": \"...\"}"
-                    single_prompt += "\n[중요] summary와 title 모두 한국어로 작성하세요."
-                    
-                    # Non-streaming API call (simpler and more reliable)
-                    response = client.responses.create(
-                        model="gpt-5-mini-2025-08-07",
-                        input=[
-                            {"role": "system", "content": single_prompt},
+                    # Async stream request
+                    stream = client.chat.completions.create(
+                        model="gpt-4o-mini", # Use a fast model
+                        messages=[
+                            {"role": "system", "content": current_prompt},
                             {"role": "user", "content": user_input}
-                        ]
+                        ],
+                        stream=True
                     )
+
+                    full_response = ""
                     
-                    output_text = response.output_text
-                    
-                    # Send delta events character by character for UI
-                    for char in output_text[:100]:  # First 100 chars for streaming effect
-                        queue_put({"event": "delta", "data": json.dumps({"draft_id": draft_id, "text": char})})
-                    
-                    # Parse final JSON
-                    json_match = re.search(r'\{.*\}', output_text, re.DOTALL)
+                    # Process stream
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            full_response += content
+                            # Yield delta for UI
+                            yield {"event": "delta", "data": json.dumps({"draft_id": draft_id, "text": content})}
+                            # Small delay not needed for real API, but good for throttling if needed
+                            # await asyncio.sleep(0.001) 
+
+                    # Parse JSON
+                    json_match = re.search(r'\{.*\}', full_response, re.DOTALL)
                     if json_match:
                         draft = json.loads(json_match.group())
                         draft["id"] = draft_id
                     else:
-                        draft = {"id": draft_id, "title": f"Story #{draft_id}", "summary": output_text[:400], "theme": "parsed"}
+                        draft = {"id": draft_id, "title": f"Story #{draft_id}", "summary": full_response[:400], "theme": "parsed"}
                     
-                    queue_put({"event": "draft", "data": json.dumps(draft)})
-                    return True
+                    yield {"event": "draft", "data": json.dumps(draft)}
+                    
+                    # Add to context for next iteration
+                    # Use title + summary for better context, or just summary
+                    previous_summaries.append(f"[{draft.get('title', 'Untitled')}] {draft.get('summary', '')}")
+
                 except Exception as e:
-                    queue_put({"event": "draft", "data": json.dumps({"id": draft_id, "title": f"Error #{draft_id}", "summary": str(e), "theme": "error"})})
-                    return False
-            
-            # Use ThreadPoolExecutor for true parallelism with sync OpenAI calls
-            import concurrent.futures
-            loop = asyncio.get_event_loop()
-            
-            def blocking_put(item):
-                asyncio.run_coroutine_threadsafe(event_queue.put(item), loop)
-            
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
-            futures = [executor.submit(sync_stream_single_draft, i+1, blocking_put) for i in range(10)]
-            
-            # Wait for all to complete while yielding events
-            done_count = 0
-            while done_count < 10:
-                # Check for completed futures
-                for f in futures:
-                    if f.done() and not hasattr(f, '_counted'):
-                        f._counted = True
-                        done_count += 1
-                
-                # Yield any queued events
-                try:
-                    event_data = await asyncio.wait_for(event_queue.get(), timeout=0.05)
-                    yield event_data
-                except asyncio.TimeoutError:
-                    pass
-                
-                await asyncio.sleep(0.01)
-            
-            executor.shutdown(wait=False)
-            
-            # Drain remaining events
-            await asyncio.sleep(0.1)  # Give a moment for final events
-            while not event_queue.empty():
-                event_data = await event_queue.get()
-                yield event_data
+                    print(f"Error generating draft {draft_id}: {e}")
+                    error_draft = {"id": draft_id, "title": f"Error #{draft_id}", "summary": str(e), "theme": "error"}
+                    yield {"event": "draft", "data": json.dumps(error_draft)}
+                    # Still append to keep index sync, or skip
+                    previous_summaries.append("Error during generation")
 
-            yield {"event": "complete", "data": json.dumps({"total": 10, "source": "openai_parallel_stream"})}
+            yield {"event": "complete", "data": json.dumps({"total": 10, "source": "openai_serial_context"})}
 
-            
         except Exception as e:
             yield {"event": "error", "data": json.dumps({"error": str(e)})}
     
@@ -1764,7 +1795,36 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
             # Get negative prompt from config and clean it
             raw_neg = config.get("prompts", {}).get("negative_prompt", "bad quality, blurry, text, watermark")
             negative_prompt = clean_string(raw_neg)
-            
+
+            # [Veo 3.1 Integration] Generate 5-Element Video Prompt
+            veo_prompt_text = ""
+            if current_cut:
+                try:
+                    veo_system = config.get("prompts", {}).get("veo_video", "")
+                    if veo_system:
+                         # Replace template variables
+                        veo_system = veo_system.replace("{{scene_description}}", current_cut.get("description", ""))
+                        veo_system = veo_system.replace("{{physics_detail}}", current_cut.get("physicsDetail", "Dynamic movement"))
+                        veo_system = veo_system.replace("{{sfx_guide}}", current_cut.get("sfxGuide", "Ambient sound"))
+                        veo_system = veo_system.replace("{{emotion_level}}", str(current_cut.get("emotionLevel", 5)))
+                        veo_system = veo_system.replace("{{character_tag}}", current_cut.get("characterTag", "Main Character"))
+                        
+                        # We use a separate non-streaming call for this metadata generation
+                        openai_client = get_openai_client()
+                        if openai_client:
+                             veo_resp = await asyncio.to_thread(
+                                openai_client.chat.completions.create,
+                                model="gpt-5-mini-2025-08-07",
+                                messages=[
+                                    {"role": "system", "content": veo_system},
+                                    {"role": "user", "content": "Generate 5-element Veo prompt."}
+                                ]
+                            )
+                             veo_prompt_text = veo_resp.choices[0].message.content
+                except Exception as e:
+                    print(f"Veo Prompt Gen Error: {e}")
+                    veo_prompt_text = f"Failed to generate Veo prompt: {e}"
+
             import random
             seed = random.randint(0, 2**32 - 1)
             
@@ -1808,6 +1868,13 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                             with open(filepath, 'wb') as f:
                                 f.write(image_data)
                                 
+                            # [Veo 3.1 Integration] Save Video Prompt Text
+                            if veo_prompt_text:
+                                txt_filename = f"cut_{i:03d}_{seed}.txt"
+                                txt_filepath = os.path.join(project_dir, txt_filename)
+                                with open(txt_filepath, 'w', encoding='utf-8') as tf:
+                                    tf.write(veo_prompt_text)
+
                             generated_images.append(filename)
                             image_saved = True
                             
