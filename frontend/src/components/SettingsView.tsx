@@ -26,6 +26,7 @@ export default function SettingsView() {
     const [settings, setSettings] = useState<Settings | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [activeTab, setActiveTab] = useState<'connection' | 'prompts'>('connection');
 
@@ -51,21 +52,38 @@ export default function SettingsView() {
     }, []);
 
     const fetchModels = async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout for models
+
         try {
-            const res = await fetch('http://localhost:3501/api/settings/models');
+            const res = await fetch('http://localhost:3501/api/settings/models', { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
             const data = await res.json();
             if (data.models) {
                 setAvailableModels(data.models);
             }
         } catch (e) {
             console.error("Failed to fetch models:", e);
+            // No specific error state for models, just log
         }
     };
 
     const fetchSettings = async () => {
         setIsLoading(true);
+        setError(null); // Clear previous errors
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
         try {
-            const res = await fetch('http://localhost:3501/api/settings');
+            const res = await fetch('http://localhost:3501/api/settings', { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
             const data = await res.json();
             setSettings(data);
             setComfyuiPath(data.comfyui_path || '');
@@ -81,8 +99,9 @@ export default function SettingsView() {
             setNegativePrompt(data.prompts?.negative_prompt || '');
             setUseReferenceImage(data.use_reference_image !== false);
             setSelectedModel(data.selected_model || '');
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to fetch settings:", e);
+            setError(e.message || "백엔드 서버에 연결할 수 없습니다.");
             // Even on error, stop loading so user is not stuck
             setSettings({
                 openai_api_key_masked: '',
@@ -152,7 +171,41 @@ export default function SettingsView() {
     }
 
     return (
-        <div className="p-8 space-y-6 max-w-4xl mx-auto">
+        <div className="p-8 max-w-4xl mx-auto space-y-8">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-3xl font-black text-white mb-2">설정 및 환경 정의</h2>
+                    <p className="text-slate-400">API 키 및 ComfyUI 경로를 설정합니다.</p>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/50 border border-slate-700">
+                    <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-500 animate-pulse' : isLoading ? 'bg-amber-500 animate-pulse' : 'bg-green-500 shadow-[0_0_8px_#22c55e]'}`} />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {error ? 'CONNECTION ERROR' : isLoading ? 'SYNCING...' : 'BACKEND ONLINE'}
+                    </span>
+                </div>
+            </div>
+
+            {error && (
+                <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-6 flex items-start gap-4 animate-in fade-in slide-in-from-top-4">
+                    <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 shrink-0">
+                        <Icon icon="solar:danger-bold-duotone" className="text-3xl" />
+                    </div>
+                    <div className="flex-1">
+                        <h4 className="text-red-400 text-lg font-black mb-1">백엔드 서버에 연결할 수 없습니다</h4>
+                        <p className="text-red-400/70 text-sm leading-relaxed mb-4">
+                            {error}. <br />
+                            백엔드 실행 창(파워쉘)에 에러 메시지가 있는지 확인하거나, 방화벽에서 3501 포트 허용 여부를 체크해 주세요.
+                        </p>
+                        <button
+                            onClick={fetchSettings}
+                            className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                        >
+                            연결 재시도
+                        </button>
+                    </div>
+                </div>
+            )}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-black text-white mb-1">설정 (Settings)</h2>

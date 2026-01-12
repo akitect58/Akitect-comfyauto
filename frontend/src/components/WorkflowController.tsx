@@ -79,14 +79,25 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
     const [useReferenceImage, setUseReferenceImage] = useState(true);
     const logEndRef = useRef<HTMLDivElement>(null);
 
+    const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+
     // 설정에서 use_reference_image 값 불러오기
     useEffect(() => {
-        fetch('http://localhost:3501/api/settings')
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        fetch('http://localhost:3501/api/settings', { signal: controller.signal })
             .then(res => res.json())
             .then(data => {
+                clearTimeout(timeoutId);
                 setUseReferenceImage(data.use_reference_image !== false);
+                setBackendStatus('connected');
             })
-            .catch(() => { });
+            .catch(() => {
+                setBackendStatus('error');
+            });
+
+        return () => clearTimeout(timeoutId);
     }, []);
 
     useEffect(() => {
@@ -699,21 +710,52 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
             {/* Stepper */}
 
             <div className="flex items-center justify-between bg-slate-900/50 p-4 rounded-2xl border border-slate-800">
-                {STEPS.map((label, idx) => (
-                    <div key={idx} className="flex items-center">
-                        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all ${state.step === idx ? 'bg-blue-600 text-white' :
-                            state.step > idx ? 'bg-green-600/20 text-green-400' : 'bg-slate-800 text-slate-500'
-                            }`}>
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${state.step > idx ? 'bg-green-500 text-white' : 'bg-slate-700 text-slate-400'
+                <div className="flex items-center gap-4">
+                    {STEPS.map((label, idx) => (
+                        <div key={idx} className="flex items-center">
+                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all ${state.step === idx ? 'bg-blue-600 text-white' :
+                                state.step > idx ? 'bg-green-600/20 text-green-400' : 'bg-slate-800 text-slate-500'
                                 }`}>
-                                {state.step > idx ? <Icon icon="solar:check-circle-bold" /> : idx}
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${state.step > idx ? 'bg-green-500 text-white' : 'bg-slate-700 text-slate-400'
+                                    }`}>
+                                    {state.step > idx ? <Icon icon="solar:check-circle-bold" /> : idx}
+                                </div>
+                                <span className="text-xs font-bold hidden md:inline">{label}</span>
                             </div>
-                            <span className="text-xs font-bold hidden md:inline">{label}</span>
+                            {idx < 4 && <div className={`w-8 h-0.5 mx-2 ${state.step > idx ? 'bg-green-500' : 'bg-slate-700'}`} />}
                         </div>
-                        {idx < 4 && <div className={`w-8 h-0.5 mx-2 ${state.step > idx ? 'bg-green-500' : 'bg-slate-700'}`} />}
-                    </div>
-                ))}
+                    ))}
+                </div>
+
+                {/* Backend Status Indicator */}
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700">
+                    <div className={`w-2 h-2 rounded-full ${backendStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' :
+                        backendStatus === 'checking' ? 'bg-amber-500 animate-pulse' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]'
+                        }`} />
+                    <span className="text-[10px] font-bold text-slate-400">
+                        {backendStatus === 'connected' ? 'BACKEND ONLINE' :
+                            backendStatus === 'checking' ? 'SYNCING...' : 'BACKEND OFFLINE'}
+                    </span>
+                </div>
             </div>
+
+            {backendStatus === 'error' && (
+                <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-4 flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
+                    <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center text-red-500">
+                        <Icon icon="solar:danger-bold" className="text-2xl" />
+                    </div>
+                    <div className="flex-1">
+                        <h4 className="text-red-400 font-bold">백엔드 서버 연결 실패</h4>
+                        <p className="text-red-400/70 text-sm">Port 3501 서버가 실행 중인지 확인하거나, 방화벽 설정을 검토하세요.</p>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition-all"
+                    >
+                        재시도
+                    </button>
+                </div>
+            )}
 
             <AnimatePresence mode="wait">
                 {/* ===== STEP 0: Mode Selection ===== */}
