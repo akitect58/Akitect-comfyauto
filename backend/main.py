@@ -1327,7 +1327,7 @@ async def story_generation_stream(
                 system_prompt = system_prompt.replace("{{chunk_size}}", str(end_idx - start_idx))
                 system_prompt = system_prompt.replace("{{atmosphere}}", str(draftSummary)) # Use summary/atmosphere
 
-                user_input = f"Generate cuts {start_idx+1} to {end_idx}. Focus on sequential flow."
+                user_input = f"Generate cuts {start_idx+1} to {end_idx}. Focus on sequential flow. Output valid JSON."
                 
                 # Using synchronous call inside thread for this chunk
                 response = await asyncio.to_thread(
@@ -1743,56 +1743,6 @@ def check_comfyui_connection(host="127.0.0.1", port=8188):
 
 import subprocess
 
-async def check_and_install_dependencies(client: ComfyUIClient, config: dict):
-    """
-    Check for essential custom nodes (IP-Adapter) and try to install them if missing.
-    Returns: {"installed": bool, "missing": bool, "message": str}
-    """
-    # 1. Check if IPAdapter node exists
-    try:
-        # IPAdapterUnifiedLoader is a core node of IPAdapter Plus
-        info = client.get_object_info("IPAdapterUnifiedLoader")
-        if info:
-            return {"installed": False, "missing": False, "message": "All good"}
-    except Exception:
-        pass # Node likely missing
-    
-    print("⚠️ IP-Adapter node missing. Attempting auto-install...")
-    
-    # 2. Try to Install
-    comfy_path = config.get("comfyui_path")
-    if not comfy_path or not os.path.exists(comfy_path):
-        return {"installed": False, "missing": True, "message": "ComfyUI 경로가 설정되지 않았습니다. config.json을 확인하세요."}
-        
-    custom_nodes_path = os.path.join(comfy_path, "custom_nodes")
-    if not os.path.exists(custom_nodes_path):
-        return {"installed": False, "missing": True, "message": "custom_nodes 폴더를 찾을 수 없습니다."}
-        
-    # Target Repo
-    repo_url = "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git"
-    folder_name = "ComfyUI_IPAdapter_plus"
-    target_dir = os.path.join(custom_nodes_path, folder_name)
-    
-    if os.path.exists(target_dir):
-        return {"installed": False, "missing": True, "message": "폴더는 존재하지만 로드되지 않았습니다. ComfyUI를 재시작하거나 업데이트하세요."}
-        
-    try:
-        # Run Git Clone
-        process = await asyncio.to_thread(
-            subprocess.run, 
-            ["git", "clone", repo_url, target_dir],
-            capture_output=True,
-            text=True
-        )
-        
-        if process.returncode == 0:
-            return {"installed": True, "missing": True, "message": "Installed successfully"}
-        else:
-            return {"installed": False, "missing": True, "message": f"Git clone failed: {process.stderr}"}
-            
-    except Exception as e:
-        return {"installed": False, "missing": True, "message": f"Install Error: {str(e)}"}
-
 async def real_comfyui_process_generator(params: dict, topic: str, reference_image: str = "") -> AsyncGenerator[str, None]:
     """
     Real ComfyUI generation process:
@@ -1806,20 +1756,7 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
         yield create_sse_event({"type": "done"})
         return
     
-    # 1.5. Dependency Check & Auto-Install
-    try:
-        deps_result = await check_and_install_dependencies(client, config)
-        if deps_result["installed"]:
-            yield create_sse_event({"type": "error", "message": "⚠️ [설치 완료] IP-Adapter 노드가 설치되었습니다. ComfyUI를 **재시작** 후 다시 실행해주세요."})
-            yield create_sse_event({"type": "done"})
-            return
-        elif deps_result["missing"] and not deps_result["installed"]:
-            yield create_sse_event({"type": "error", "message": f"❌ 필수 노드 누락: {deps_result['message']}"})
-            yield create_sse_event({"type": "done"})
-            return
-    except Exception as e:
-        print(f"Dep check failed: {e}")
-        # Continue anyway, might verify later
+    # [REVERTED] IP-Adapter Auto-Install and Reference Image Logic removed by user request.
 
     config = load_config()
     comfyui_server = "127.0.0.1:8188"
@@ -1855,33 +1792,9 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
 
     # 3. Generation Loop
     
-    # [Advanced] Reference Image & IP-Adapter Injection
-    if reference_image and os.path.exists(reference_image):
-        comfy_path = config.get("comfyui_path")
-        if comfy_path:
-            input_dir = os.path.join(comfy_path, "input")
-            if os.path.exists(input_dir):
-                # Copy file
-                ref_filename = os.path.basename(reference_image)
-                dest_path = os.path.join(input_dir, ref_filename)
-                try:
-                     shutil.copy(reference_image, dest_path)
-                     yield create_sse_event({"type": "log", "message": f"🖼️ 레퍼런스 이미지 ComfyUI 로드: {ref_filename}"})
-                     
-                     # Update Workflow "LoadImage" nodes
-                     # Update ALL LoadImage nodes to the reference image (assuming single input scenario)
-                     updated_nodes = 0
-                     for node_id, node in workflow_template.items():
-                         if node.get("class_type") == "LoadImage":
-                             if "inputs" in node and "image" in node["inputs"]:
-                                 node["inputs"]["image"] = ref_filename
-                                 updated_nodes += 1
-                     
-                     if updated_nodes > 0:
-                         yield create_sse_event({"type": "log", "message": f"✅ IP-Adapter용 이미지 노드 {updated_nodes}개 설정 완료"})
-                except Exception as e:
-                    print(f"Failed to copy reference image: {e}")
-                    yield create_sse_event({"type": "log", "message": f"⚠️ 레퍼런스 이미지 복사 실패: {e}"})
+    # [REVERTED] Reference Image & IP-Adapter Injection Logic removed.
+    # if reference_image and os.path.exists(reference_image):
+    #     ...
 
     generated_images = []
     
