@@ -1297,7 +1297,11 @@ async def story_generation_stream(
                 system_prompt = system_prompt.replace("{{cut_count}}", str(total_cuts))
                 system_prompt = system_prompt.replace("{{story_title}}", draftTitle or "")
                 system_prompt = system_prompt.replace("{{story_summary}}", draftSummary or "")
-                system_prompt = system_prompt.replace("{{character_tag}}", "Main Character") 
+                
+                # [Fix] Enforce Animal Protagonist Context
+                protagonist_info = config.get("prompts", {}).get("protagonist_prompt", "A majestic wild animal")
+                system_prompt = system_prompt.replace("{{character_tag}}", "The Wild Animal") 
+                system_prompt += f"\n\n[STRICT CHARACTER ENFORCEMENT]\nThe protagonist is NOT a human. It is:\n{protagonist_info}\nAll descriptions must reflect this animal's physiology and behavior." 
             
             user_input = f"제목: {draftTitle}\n\n초안 요약:\n{draftSummary}\n\n위 초안을 바탕으로 {total_cuts}컷의 상세 스토리와 캐릭터 묘사를 생성해주세요."
             
