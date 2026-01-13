@@ -135,8 +135,8 @@ async def generate_reference_image(req: ReferenceImageRequest):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-async def real_comfyui_process_generator(params: dict, topic: str, reference_image: str = "") -> AsyncGenerator[dict, None]:
-    if not check_comfyui_connection():
+async def real_comfyui_process_generator(params: dict, topic: str, reference_image: str = "", skip_generation: bool = False) -> AsyncGenerator[dict, None]:
+    if not skip_generation and not check_comfyui_connection():
         yield create_sse_event({"type": "error", "message": "❌ ComfyUI 서버(127.0.0.1:8188)가 켜져있지 않습니다. 실행 후 다시 시도해주세요."})
         return
     
@@ -286,6 +286,52 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                  yield create_sse_event({"type": "log", "message": "⚠️ 참조 이미지가 있지만 설정에서 비활성화되어 무시합니다."})
             active_workflow_template = load_workflow_template("base_generation")
         
+        # Skip generation logic
+        if skip_generation:
+             # Just generate Veo prompt (sync for simplicity in skip mode or async is fine)
+             veo_prompt_text = ""
+             if current_cut:
+                 try:
+                    veo_system = config.get("prompts", {}).get("veo_video", "")
+                    if veo_system:
+                        veo_system = veo_system.replace("{{scene_description}}", current_cut.get("description", ""))
+                        veo_system = veo_system.replace("{{physics_detail}}", current_cut.get("physicsDetail", "Dynamic movement"))
+                        veo_system = veo_system.replace("{{sfx_guide}}", current_cut.get("sfxGuide", "Ambient sound"))
+                        veo_system = veo_system.replace("{{emotion_level}}", str(current_cut.get("emotionLevel", 5)))
+                        veo_system = veo_system.replace("{{character_tag}}", current_cut.get("characterTag", "Main Character"))
+                        
+                        openai_client = get_openai_client()
+                        if openai_client:
+                             veo_resp = await asyncio.to_thread(openai_client.chat.completions.create, model="gpt-5-mini-2025-08-07", messages=[{"role": "system", "content": veo_system}, {"role": "user", "content": "Generate 5-element Veo prompt."}])
+                             veo_prompt_text = veo_resp.choices[0].message.content
+                    current_cut["videoPrompt"] = veo_prompt_text
+                    current_cut["veo_generated"] = True
+                    # Prompt Construction (for Meta)
+                    if params.get("style") == "animation":
+                         anim_template = config.get("prompts", {}).get("style_animation", "")
+                         desc = clean_string(current_cut.get("description", ""))
+                         char_p = clean_string(params.get("character_prompt", "Character"))
+                         subject_desc = f"{char_p}, {desc}"
+                         positive_prompt = anim_template.replace("{{subject_description}}", subject_desc)
+                    else:
+                        desc = clean_string(current_cut.get("description", ""))
+                        physics = clean_string(current_cut.get("physicsDetail", ""))
+                        lighting = clean_string(current_cut.get("lightingCondition", ""))
+                        weather = clean_string(current_cut.get("weatherAtmosphere", ""))
+                        char_prompt = clean_string(params.get("character_prompt", "")) if current_cut.get("characterTag") else ""
+                        positive_template = config.get("prompts", {}).get("positive_prompt_template", "photorealistic, 8K UHD, {{scene}}")
+                        scene_text = f"{physics}, {lighting}, {weather}, {char_prompt}"
+                        positive_prompt = positive_template.replace("{{scene}}", scene_text)
+                    
+                    if current_cut:
+                        current_cut["imagePrompt"] = positive_prompt
+                        
+                 except Exception as e:
+                    print(f"Skipped Veo Error: {e}")
+             
+             yield create_sse_event({"type": "log", "message": f"⏭️ [Cut {i}] 이미지 생성 건너뜀 (프롬프트만 생성 완료)"})
+             continue
+
         try:
             # Prompt Construction
             if params.get("style") == "animation":

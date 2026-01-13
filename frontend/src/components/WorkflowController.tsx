@@ -524,7 +524,7 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
     };
 
     // Step 2 -> Step 3: Generate first reference image (or skip if disabled)
-    const startGeneration = async () => {
+    const startGeneration = async (skipGeneration: boolean = false) => {
         if (state.cuts.length === 0) {
             if (state.style === 'animation' && state.editedStory.trim()) {
                 alert("⚠️ 컷 데이터가 없습니다!\n\n작성하신 스토리를 바탕으로 이미지를 생성하려면\n먼저 [AI 컷 나누기] 버튼을 눌러주세요.");
@@ -600,7 +600,8 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                     concept: "기본 (Default)",
                     title: state.selectedTitle || state.selectedDraft?.title || '',
                     characterPrompt: state.characterPrompt,
-                    referenceImage: refImage || ""
+                    referenceImage: refImage || "",
+                    skip_generation: skipGeneration
                 })
             })
                 .then(res => res.json())
@@ -1232,11 +1233,18 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                 </button>
                                 <div className="flex flex-col items-end gap-2">
                                     <button
-                                        onClick={startGeneration}
+                                        onClick={() => startGeneration(false)}
                                         disabled={state.cuts.length === 0}
                                         className={`px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-black rounded-2xl transition-all shadow-lg flex items-center gap-3 ${state.cuts.length === 0 ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
                                     >
                                         <Icon icon="solar:play-bold" className="text-xl" /> 이미지 생성 시작
+                                    </button>
+                                    <button
+                                        onClick={() => startGeneration(true)}
+                                        disabled={state.cuts.length === 0}
+                                        className={`px-4 py-2 mt-2 bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold rounded-xl transition-all text-sm flex items-center gap-2 ${state.cuts.length === 0 ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+                                    >
+                                        <Icon icon="solar:forward-bold" /> 건너뛰기 (프롬프트만 생성)
                                     </button>
                                     {state.cuts.length === 0 && (
                                         <span className="text-[10px] text-amber-500 font-bold animate-pulse">

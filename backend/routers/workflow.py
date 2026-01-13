@@ -80,9 +80,11 @@ async def stream_workflow(
     params['character_prompt'] = job_data.get("characterPrompt", "")
     params['style'] = job_data.get("style", "photoreal")
 
+    skip_generation = job_data.get("skip_generation", False)
+
     # Use real generator
     return EventSourceResponse(
-        real_comfyui_process_generator(params, topic, referenceImage)
+        real_comfyui_process_generator(params, topic, referenceImage, skip_generation=skip_generation)
     )
 
 @router.post("/workflow/control")

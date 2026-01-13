@@ -76,6 +76,7 @@ class QueueRequest(BaseModel):
     title: str = ""
     characterPrompt: str = ""
     referenceImage: str = ""
+    skip_generation: bool = False
 
 class ControlRequest(BaseModel):
     action: str
