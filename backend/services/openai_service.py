@@ -564,3 +564,51 @@ async def generate_veo_prompts_for_history(folder_name: str):
         return {"success": True, "updated_cuts": updated_cuts}
     except Exception as e:
         return {"success": False, "error": str(e)}
+        return {"success": True, "updated_cuts": updated_cuts}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+async def generate_veo_prompts_batch(cuts_metadata: List[dict]):
+    """
+    Batch generate Veo prompts for multiple cuts in one go.
+    cuts_metadata: list of dicts with keys 'cutNumber', 'description', 'physicsDetail', etc.
+    Returns: dict { cutIndex: prompt_string }
+    """
+    client = get_openai_client()
+    if not client: return {}
+
+    try:
+        # Construct Batch Prompt
+        descriptions_str = ""
+        for cut in cuts_metadata:
+            descriptions_str += f"[Cut {cut['cutNumber']}] Desc: {cut.get('description','')} | Physics: {cut.get('physicsDetail','')} | Emotion: {cut.get('emotionLevel','')}\n"
+
+        system_prompt = (
+            "You are a Video Prompt Expert for Google Veo 3.1.\n"
+            "Generate optimized video prompts for the list of scenes provided.\n"
+            "Return ONLY a JSON Object with a key 'prompts' which is a list of objects: {\"cutNumber\": int, \"videoPrompt\": \"...\"}\n"
+            "Each videoPrompt must include visual style, camera movement, and lighting details."
+        )
+
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model="gpt-5-mini-2025-08-07",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": descriptions_str}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        content = response.choices[0].message.content
+        parsed = robust_parse_json(content)
+        
+        result_map = {}
+        if parsed and "prompts" in parsed:
+            for item in parsed["prompts"]:
+                result_map[item["cutNumber"]] = item["videoPrompt"]
+        
+        return result_map
+    except Exception as e:
+        print(f"Batch Veo Generation Error: {e}")
+        return {}

@@ -11,7 +11,7 @@ from backend.core.config import load_config
 from backend.core.utils import sanitize_filename, clean_string, create_sse_event, get_time
 from backend.services.comfyui_service import check_comfyui_connection, fetch_available_models, fetch_available_ipadapters, load_workflow_template, prepare_workflow
 from backend.comfyui_client import ComfyUIClient
-from backend.services.openai_service import get_openai_client
+from backend.services.openai_service import get_openai_client, generate_veo_prompts_batch
 from backend.core.schemas import ReferenceImageRequest, UploadRequest
 
 # Global state
@@ -162,31 +162,33 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
 
     # Model Selection
     selected_model = config.get("selected_model", "RealVisXL_V5.0.safetensors")
-    available_models = await fetch_available_models(config)
-    if available_models and selected_model not in available_models:
-        fallback_model = available_models[0]
-        yield create_sse_event({"type": "log", "message": f"⚠️ 모델 '{selected_model}'을(를) 찾을 수 없어 '{fallback_model}'을(를) 사용합니다."})
-        selected_model = fallback_model
+    if not skip_generation:
+        available_models = await fetch_available_models(config)
+        if available_models and selected_model not in available_models:
+            fallback_model = available_models[0]
+            yield create_sse_event({"type": "log", "message": f"⚠️ 모델 '{selected_model}'을(를) 찾을 수 없어 '{fallback_model}'을(를) 사용합니다."})
+            selected_model = fallback_model
 
     # IPAdapter Selection
     selected_ipadapter = "ip-adapter-plus_sdxl_vit-h.safetensors" # Default
-    available_ipadapters = await fetch_available_ipadapters(config)
-    if available_ipadapters:
-        # 1. Exact match
-        if selected_ipadapter in available_ipadapters:
-            pass # Keep default
-        else:
-            # 2. Search for best match (sdxl + plus)
-            best_match = next((m for m in available_ipadapters if "sdxl" in m.lower() and "plus" in m.lower()), None)
-            # 3. Search for any sdxl
-            if not best_match:
-                best_match = next((m for m in available_ipadapters if "sdxl" in m.lower()), None)
-            
-            if best_match:
-                 yield create_sse_event({"type": "log", "message": f"⚠️ IPAdapter 모델 '{selected_ipadapter}'이(가) 없어 '{best_match}'(으)로 대체합니다."})
-                 selected_ipadapter = best_match
+    if not skip_generation:
+        available_ipadapters = await fetch_available_ipadapters(config)
+        if available_ipadapters:
+            # 1. Exact match
+            if selected_ipadapter in available_ipadapters:
+                pass # Keep default
             else:
-                 yield create_sse_event({"type": "log", "message": f"⚠️ 호환되는 순정 SDXL IPAdapter 모델을 찾지 못했습니다. (생성 실패 가능성 있음)"})
+                # 2. Search for best match (sdxl + plus)
+                best_match = next((m for m in available_ipadapters if "sdxl" in m.lower() and "plus" in m.lower()), None)
+                # 3. Search for any sdxl
+                if not best_match:
+                    best_match = next((m for m in available_ipadapters if "sdxl" in m.lower()), None)
+                
+                if best_match:
+                    yield create_sse_event({"type": "log", "message": f"⚠️ IPAdapter 모델 '{selected_ipadapter}'이(가) 없어 '{best_match}'(으)로 대체합니다."})
+                    selected_ipadapter = best_match
+                else:
+                    yield create_sse_event({"type": "log", "message": f"⚠️ 호환되는 순정 SDXL IPAdapter 모델을 찾지 못했습니다. (생성 실패 가능성 있음)"})
 
     # Reference Image Processing
     if reference_image and reference_image.startswith("http"):
@@ -243,11 +245,27 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
 
     generated_images = []
     cuts_data = params.get("cuts", [])
+    final_cuts_metadata = []
     
     if not cuts_data:
         yield create_sse_event({"type": "log", "message": "❌ 생성할 컷(Cut) 데이터가 없습니다."})
         yield create_sse_event({"type": "error", "message": "No cuts data found"})
         return
+
+    # [BATCH OPTIMIZATION] Generate Veo Prompts once if skipping
+    veo_map = {}
+    if skip_generation:
+         yield create_sse_event({"type": "log", "message": "⏩ Veo 프롬프트 일괄 생성 중... (Batch)"})
+         veo_map = await generate_veo_prompts_batch(cuts_data)
+         
+         # Pre-fill cuts with Veo data
+         for i, cut_data in enumerate(cuts_data):
+             cut_num = cut_data.get("cutNumber", i+1)
+             if cut_num in veo_map:
+                 cut_data["videoPrompt"] = veo_map[cut_num]
+                 cut_data["veo_generated"] = True
+             else:
+                 cut_data["videoPrompt"] = "Generation Skipped/Failed"
 
     for i, current_cut in enumerate(cuts_data):
         if generation_state["status"] == "stopped":
@@ -263,6 +281,33 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
         cut_number = current_cut.get("cutNumber", i+1)
         yield create_sse_event({"type": "log", "message": f"⏳ [Cut {cut_number}/{total_cuts}] 생성 중...", "cutIndex": cut_number})
         
+        # [SKIP LOGIC - BYPASS ALL COMFYUI]
+        if skip_generation:
+             # Just generate Image Prompt (Meta) locally
+             current_cut = current_cut # variable alias
+             if params.get("style") == "animation":
+                    anim_template = config.get("prompts", {}).get("style_animation", "")
+                    desc = clean_string(current_cut.get("description", ""))
+                    char_p = clean_string(params.get("character_prompt", "Character"))
+                    subject_desc = f"{char_p}, {desc}"
+                    positive_prompt = anim_template.replace("{{subject_description}}", subject_desc)
+             else:
+                desc = clean_string(current_cut.get("description", ""))
+                physics = clean_string(current_cut.get("physicsDetail", ""))
+                lighting = clean_string(current_cut.get("lightingCondition", ""))
+                weather = clean_string(current_cut.get("weatherAtmosphere", ""))
+                char_prompt = clean_string(params.get("character_prompt", "")) if current_cut.get("characterTag") else ""
+                positive_template = config.get("prompts", {}).get("positive_prompt_template", "photorealistic, 8K UHD, {{scene}}")
+                scene_text = f"{physics}, {lighting}, {weather}, {char_prompt}"
+                positive_prompt = positive_template.replace("{{scene}}", scene_text)
+            
+             if current_cut:
+                current_cut["imagePrompt"] = positive_prompt
+             
+             if i % 5 == 0:
+                 yield create_sse_event({"type": "log", "message": f"⏭️ [Cut {cut_number}] 데이터 처리 완료"})
+             continue
+
         active_workflow_template = None
         use_ref_setting = config.get("use_reference_image", True)
         
@@ -286,51 +331,7 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                  yield create_sse_event({"type": "log", "message": "⚠️ 참조 이미지가 있지만 설정에서 비활성화되어 무시합니다."})
             active_workflow_template = load_workflow_template("base_generation")
         
-        # Skip generation logic
-        if skip_generation:
-             # Just generate Veo prompt (sync for simplicity in skip mode or async is fine)
-             veo_prompt_text = ""
-             if current_cut:
-                 try:
-                    veo_system = config.get("prompts", {}).get("veo_video", "")
-                    if veo_system:
-                        veo_system = veo_system.replace("{{scene_description}}", current_cut.get("description", ""))
-                        veo_system = veo_system.replace("{{physics_detail}}", current_cut.get("physicsDetail", "Dynamic movement"))
-                        veo_system = veo_system.replace("{{sfx_guide}}", current_cut.get("sfxGuide", "Ambient sound"))
-                        veo_system = veo_system.replace("{{emotion_level}}", str(current_cut.get("emotionLevel", 5)))
-                        veo_system = veo_system.replace("{{character_tag}}", current_cut.get("characterTag", "Main Character"))
-                        
-                        openai_client = get_openai_client()
-                        if openai_client:
-                             veo_resp = await asyncio.to_thread(openai_client.chat.completions.create, model="gpt-5-mini-2025-08-07", messages=[{"role": "system", "content": veo_system}, {"role": "user", "content": "Generate 5-element Veo prompt."}])
-                             veo_prompt_text = veo_resp.choices[0].message.content
-                    current_cut["videoPrompt"] = veo_prompt_text
-                    current_cut["veo_generated"] = True
-                    # Prompt Construction (for Meta)
-                    if params.get("style") == "animation":
-                         anim_template = config.get("prompts", {}).get("style_animation", "")
-                         desc = clean_string(current_cut.get("description", ""))
-                         char_p = clean_string(params.get("character_prompt", "Character"))
-                         subject_desc = f"{char_p}, {desc}"
-                         positive_prompt = anim_template.replace("{{subject_description}}", subject_desc)
-                    else:
-                        desc = clean_string(current_cut.get("description", ""))
-                        physics = clean_string(current_cut.get("physicsDetail", ""))
-                        lighting = clean_string(current_cut.get("lightingCondition", ""))
-                        weather = clean_string(current_cut.get("weatherAtmosphere", ""))
-                        char_prompt = clean_string(params.get("character_prompt", "")) if current_cut.get("characterTag") else ""
-                        positive_template = config.get("prompts", {}).get("positive_prompt_template", "photorealistic, 8K UHD, {{scene}}")
-                        scene_text = f"{physics}, {lighting}, {weather}, {char_prompt}"
-                        positive_prompt = positive_template.replace("{{scene}}", scene_text)
-                    
-                    if current_cut:
-                        current_cut["imagePrompt"] = positive_prompt
-                        
-                 except Exception as e:
-                    print(f"Skipped Veo Error: {e}")
-             
-             yield create_sse_event({"type": "log", "message": f"⏭️ [Cut {i}] 이미지 생성 건너뜀 (프롬프트만 생성 완료)"})
-             continue
+
 
         try:
             # Prompt Construction

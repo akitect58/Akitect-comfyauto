@@ -399,11 +399,13 @@ export default function HistoryView() {
 
                             <div className="flex-1 overflow-y-auto w-full p-8 custom-scrollbar bg-slate-950/50">
                                 <div className="space-y-12">
-                                    {selectedProject.assets.map((asset, idx) => {
-                                        // Find matching cut data
+                                    {selectedProject.metadata.cuts_data?.map((cutData, idx) => {
                                         // Asset path format: /outputs/EncodedFolder/001.png
-                                        const filename = asset.split('/').pop();
-                                        const cutData = selectedProject.metadata.cuts_data?.find(c => c.filename === filename || (c.cutNumber === idx + 1));
+                                        const filename = cutData.filename;
+                                        const asset = filename ? `/api/history/image/${selectedProject.folder_name}/${filename}` : null;
+
+                                        // Fallback for asset URL construction if filename is just basename
+                                        const imageUrl = filename ? `http://localhost:3501/outputs/${selectedProject.folder_name}/${filename}` : null;
 
                                         return (
                                             <motion.div
@@ -414,12 +416,22 @@ export default function HistoryView() {
                                             >
                                                 {/* Image */}
                                                 <div className="w-full md:w-1/3 max-w-sm shrink-0">
-                                                    <div className="aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-700">
-                                                        <img
-                                                            src={`http://localhost:3501${asset}`}
-                                                            alt={`Cut ${idx + 1}`}
-                                                            className="w-full h-full object-contain"
-                                                        />
+                                                    <div className="aspect-video bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-700 relative">
+                                                        {imageUrl ? (
+                                                            <img
+                                                                src={imageUrl}
+                                                                alt={`Cut ${idx + 1}`}
+                                                                className="w-full h-full object-contain"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzMzMyIgZD0iTTEyIDJDMTYuNDIgMiAyMCA1LjU4IDIwIDEwVjE0QzIwIDE4LjQyIDE2LjQyIDIyIDEyIDIyQzcuNTggMjIgNCAxOC40MiA0IDE0VjEwQzQgNS41OCA3LjU4IDIgMTIgMlpNMTIgNEc4LjY5IDQgNiA2LjY5IDYgMTBWTRTRDNiAxNi42OSA4LjY5IDE5IDEyIDE5QzE1LjMxIDE5IDE4IDE2LjY5IDE4IDE0VjEwQzE4IDYuNjkgMTUuMzEgNCAxMiA0WiIvPjwvc3ZnPg==';
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-700">
+                                                                <Icon icon="solar:gallery-remove-linear" className="text-4xl mb-2" />
+                                                                <span className="text-xs font-mono">No Image</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
 
