@@ -71,6 +71,23 @@ async def fetch_available_models(config: dict) -> List[str]:
 
     return []
 
+async def fetch_available_ipadapters(config: dict) -> List[str]:
+    """Get list of IPAdapter models from ComfyUI API"""
+    if check_comfyui_connection():
+        try:
+            client = ComfyUIClient("127.0.0.1:8188")
+            info = client.get_object_info("IPAdapterModelLoader")
+            if 'IPAdapterModelLoader' in info:
+                input_req = info['IPAdapterModelLoader'].get('input', {}).get('required', {})
+                models = input_req.get('ipadapter_file', [])
+                if models and isinstance(models[0], list):
+                    return models[0]
+        except Exception as e:
+            print(f"Failed to fetch IPAdapters: {e}")
+            
+    # Local scan fallback could go here, but API is reliable for Node lists
+    return []
+
 def load_workflow_template(workflow_name: str) -> dict:
     """Load a ComfyUI workflow template from the workflows directory"""
     workflow_path = os.path.join(BASE_DIR, "workflows", f"{workflow_name}.json")

@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Dict
 from backend.core.paths import OUTPUTS_DIR, ASSETS_DIR
 from backend.core.config import load_config
 from backend.core.utils import sanitize_filename, clean_string, create_sse_event, get_time
-from backend.services.comfyui_service import check_comfyui_connection, fetch_available_models, load_workflow_template, prepare_workflow
+from backend.services.comfyui_service import check_comfyui_connection, fetch_available_models, fetch_available_ipadapters, load_workflow_template, prepare_workflow
 from backend.comfyui_client import ComfyUIClient
 from backend.services.openai_service import get_openai_client
 from backend.core.schemas import ReferenceImageRequest, UploadRequest
@@ -168,6 +168,26 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
         yield create_sse_event({"type": "log", "message": f"⚠️ 모델 '{selected_model}'을(를) 찾을 수 없어 '{fallback_model}'을(를) 사용합니다."})
         selected_model = fallback_model
 
+    # IPAdapter Selection
+    selected_ipadapter = "ip-adapter-plus_sdxl_vit-h.safetensors" # Default
+    available_ipadapters = await fetch_available_ipadapters(config)
+    if available_ipadapters:
+        # 1. Exact match
+        if selected_ipadapter in available_ipadapters:
+            pass # Keep default
+        else:
+            # 2. Search for best match (sdxl + plus)
+            best_match = next((m for m in available_ipadapters if "sdxl" in m.lower() and "plus" in m.lower()), None)
+            # 3. Search for any sdxl
+            if not best_match:
+                best_match = next((m for m in available_ipadapters if "sdxl" in m.lower()), None)
+            
+            if best_match:
+                 yield create_sse_event({"type": "log", "message": f"⚠️ IPAdapter 모델 '{selected_ipadapter}'이(가) 없어 '{best_match}'(으)로 대체합니다."})
+                 selected_ipadapter = best_match
+            else:
+                 yield create_sse_event({"type": "log", "message": f"⚠️ 호환되는 순정 SDXL IPAdapter 모델을 찾지 못했습니다. (생성 실패 가능성 있음)"})
+
     # Reference Image Processing
     if reference_image and reference_image.startswith("http"):
         if "/assets/" in reference_image:
@@ -320,8 +340,10 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
                 "positive_prompt": positive_prompt, "negative_prompt": negative_prompt, "seed": seed,
                 "cut_number": i, "ckpt_name": selected_model, "width": params.get("resolution_w", 1920), "height": params.get("resolution_h", 1080),
                 "steps": config.get("steps", 30), "cfg": config.get("cfg", 7.5),
+                "steps": config.get("steps", 30), "cfg": config.get("cfg", 7.5),
                 "sampler_name": config.get("sampler_name", "dpmpp_2m"), "scheduler": config.get("scheduler", "karras"),
-                "reference_image": current_reference_image if current_reference_image else ""
+                "reference_image": current_reference_image if current_reference_image else "",
+                "ipadapter_file": selected_ipadapter
             })
             
             result = client.queue_prompt(workflow)
@@ -397,16 +419,17 @@ async def real_comfyui_process_generator(params: dict, topic: str, reference_ima
     for i, cut in enumerate(cuts_data):
         prefix = f"cut_{i:03d}_"
         matching_img = next((img for img in generated_images if img.startswith(prefix)), None)
-        if matching_img:
-            cut_copy = cut.copy()
-            cut_copy["filename"] = matching_img
-            final_cuts_metadata.append(cut_copy)
+        
+        # Always save metadata, even if image wasn't generated
+        cut_copy = cut.copy()
+        cut_copy["filename"] = matching_img if matching_img else ""
+        final_cuts_metadata.append(cut_copy)
 
     result_data = {
         "title": params['selected_title'] or topic,
         "mode": params['mode_name'],
         "resolution": f"{params['resolution_w']}x{params['resolution_h']}",
-        "cuts": len(generated_images),
+        "cuts": len(cuts_data), # Total planned cuts
         "created_at": get_time(),
         "cuts_data": final_cuts_metadata,
         "folder_name": folder_name,
