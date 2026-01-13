@@ -39,6 +39,8 @@ async def fetch_available_models(config: dict) -> List[str]:
 
     # 2. Try Local Scan
     comfy_path = config.get("comfyui_path", "")
+    print(f"[DEBUG] Scanning for models. Configured Path: '{comfy_path}'")
+    
     if comfy_path and os.path.exists(comfy_path):
         # Common paths: models/checkpoints, models/diffusion_models
         # User requested: models/diffusion_models specifically, but typically checkpoints are in models/checkpoints
@@ -51,6 +53,7 @@ async def fetch_available_models(config: dict) -> List[str]:
         ]
         
         for p in search_paths:
+            print(f"[DEBUG] Checking path: '{p}' (Exists: {os.path.exists(p)})")
             if os.path.exists(p):
                 for root, dirs, files in os.walk(p):
                     for file in files:
@@ -62,7 +65,9 @@ async def fetch_available_models(config: dict) -> List[str]:
                                 models.append(file)
         
         # Dedup and sort
-        return sorted(list(set(models)))
+        found_models = sorted(list(set(models)))
+        print(f"[DEBUG] Found {len(found_models)} models: {found_models[:5]}...")
+        return found_models
 
     return []
 
