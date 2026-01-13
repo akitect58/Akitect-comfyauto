@@ -46,7 +46,7 @@ export default function HistoryView() {
         try {
             const res = await fetch('http://localhost:3501/api/history');
             const data = await res.json();
-            setHistory(data);
+            setHistory(data.projects || []);
         } catch (error) {
             console.error("Failed to fetch history:", error);
         } finally {
@@ -128,12 +128,20 @@ export default function HistoryView() {
 
     const formatTimestamp = (ts: string) => {
         if (!ts) return "N/A";
-        const year = ts.substring(0, 4);
-        const month = ts.substring(4, 6);
-        const day = ts.substring(6, 8);
-        const hour = ts.substring(9, 11);
-        const minute = ts.substring(11, 13);
-        return `${year}-${month}-${day} ${hour}:${minute}`;
+        // Legacy format check (HH:MM:SS)
+        if (ts.length === 8 && ts.includes(":")) {
+            return `Today ${ts}`;
+        }
+        // Standard format YYYYMMDD-HHMMSS
+        if (ts.length >= 13) {
+            const year = ts.substring(0, 4);
+            const month = ts.substring(4, 6);
+            const day = ts.substring(6, 8);
+            const hour = ts.substring(9, 11);
+            const minute = ts.substring(11, 13);
+            return `${year}-${month}-${day} ${hour}:${minute}`;
+        }
+        return ts;
     };
 
     return (

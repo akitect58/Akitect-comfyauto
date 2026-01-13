@@ -43,7 +43,7 @@
             "scheduler": "karras",
             "denoise": 1.0,
             "model": [
-                "1",
+                "11",
                 0
             ],
             "positive": [
@@ -76,11 +76,56 @@
     "7": {
         "class_type": "SaveImage",
         "inputs": {
-            "filename_prefix": "akitect_reference",
+            "filename_prefix": "akitect_CUT_NUMBER_PLACEHOLDER",
             "images": [
                 "6",
                 0
             ]
+        }
+    },
+    "10": {
+        "class_type": "LoadImage",
+        "inputs": {
+            "image": "REFERENCE_IMAGE_PLACEHOLDER"
+        }
+    },
+    "11": {
+        "class_type": "IPAdapterAdvanced",
+        "inputs": {
+            "ipadapter": [
+                "12",
+                0
+            ],
+            "clip_vision": [
+                "13",
+                0
+            ],
+            "image": [
+                "10",
+                0
+            ],
+            "model": [
+                "1",
+                0
+            ],
+            "weight": 0.8,
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "weight_type": "linear",
+            "combine_embeds": "concat",
+            "embeds_scaling": "V only"
+        }
+    },
+    "12": {
+        "class_type": "IPAdapterModelLoader",
+        "inputs": {
+            "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+        }
+    },
+    "13": {
+        "class_type": "CLIPVisionLoader",
+        "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
         }
     }
 }

@@ -37,10 +37,10 @@ type WorkflowState = {
     loadingDetail: string;
     streamingText: string;
     referenceImage: string | null;
-    referenceConfirmed: boolean;
     currentCutIndex: number;
     result: any;
     currentImage: string | null;
+    targetCuts: number;
 };
 
 
@@ -79,10 +79,10 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
         loadingDetail: '',
         streamingText: '',
         referenceImage: null,
-        referenceConfirmed: false,
         currentCutIndex: 0,
         result: null,
-        currentImage: null
+        currentImage: null,
+        targetCuts: 100
     });
     // 10개 초안의 개별 스트리밍 텍스트
     const [streamingTexts, setStreamingTexts] = useState<{ [key: number]: string }>({});
@@ -276,38 +276,40 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
     };
 
 
-    // Step 1: Fetch drafts with parallel processing (10 concurrent API calls)
+    // Step 1: Fetch drafts (Batch Stream)
     const fetchDrafts = async () => {
-        setState(s => ({ ...s, isProcessing: true, loadingMessage: 'AI 초안 생성 중 (병렬 스트리밍)', loadingDetail: 'GET /api/workflow/drafts/parallel', drafts: [] }));
-        setStreamingTexts({}); // Reset streaming texts
+        setState(s => ({ ...s, isProcessing: true, loadingMessage: 'AI 초안 생성 중 (배치 스트리밍)', loadingDetail: 'GET /api/workflow/drafts/stream', drafts: [], streamingText: '' }));
+        setStreamingTexts({});
 
         const categoryParam = state.inputMode === 'category' ? state.category : '';
         const customParam = state.inputMode === 'custom' ? state.customInput : '';
-        const url = `http://localhost:3501/api/workflow/drafts/parallel?mode=${state.mode}&category=${encodeURIComponent(categoryParam)}&customInput=${encodeURIComponent(customParam)}`;
+        const url = `http://localhost:3501/api/workflow/drafts/stream?mode=${state.mode}&category=${encodeURIComponent(categoryParam)}&customInput=${encodeURIComponent(customParam)}`;
 
         const eventSource = new EventSource(url);
 
-        // Handle streaming text delta for each draft
         eventSource.addEventListener('delta', (event: any) => {
             const data = JSON.parse(event.data);
-            const { draft_id, text } = data;
-            setStreamingTexts(prev => ({
-                ...prev,
-                [draft_id]: (prev[draft_id] || '') + text
-            }));
-        });
-
-        eventSource.addEventListener('draft', (event: any) => {
-            const draft = JSON.parse(event.data);
-            setState(s => ({
-                ...s,
-                drafts: [...s.drafts, draft].sort((a, b) => a.id - b.id)
-            }));
+            setState(s => ({ ...s, streamingText: s.streamingText + data.text }));
         });
 
         eventSource.addEventListener('complete', (event: any) => {
-            setState(s => ({ ...s, isProcessing: false, loadingMessage: '', loadingDetail: '' }));
-            setStreamingTexts({}); // Clear streaming texts when done
+            const data = JSON.parse(event.data);
+            if (data.drafts) {
+                // Ensure unique IDs and theme
+                const formattedDrafts = data.drafts.map((d: any, idx: number) => ({
+                    ...d,
+                    id: idx + 1,
+                    theme: d.theme || (['Survival', 'Bonding', 'Mystery', 'Drama', 'Action'][idx % 5])
+                }));
+                setState(s => ({
+                    ...s,
+                    isProcessing: false,
+                    loadingMessage: '',
+                    loadingDetail: '',
+                    drafts: formattedDrafts,
+                    streamingText: ''
+                }));
+            }
             eventSource.close();
         });
 
@@ -315,7 +317,9 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
             console.error('SSE Error:', event);
             setState(s => ({ ...s, isProcessing: false, loadingMessage: '', loadingDetail: '' }));
             eventSource.close();
+            alert('초안 생성 중 오류가 발생했습니다.');
         });
+
         eventSource.onerror = () => {
             eventSource.close();
             setState(s => ({ ...s, isProcessing: false, loadingMessage: '', loadingDetail: '' }));
@@ -386,7 +390,8 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                     draftId: editingDraft.id,
                     draftTitle: editingDraft.title,
                     draftSummary: editingDraft.summary,
-                    mode: state.mode
+                    mode: state.mode,
+                    targetCuts: state.targetCuts
                 })
             });
 
@@ -499,6 +504,9 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
 
     // [CONTROL] Stop or Finish Early
     const controlGeneration = async (action: 'stop' | 'finish_early') => {
+        const msg = action === 'stop' ? '🛑 중단 요청을 전송했습니다...' : '🏁 현재 컷까지만 저장하고 종료를 요청했습니다...';
+        setState(s => ({ ...s, logs: [...s.logs, msg] }));
+
         try {
             const response = await fetch('http://localhost:3501/api/workflow/control', {
                 method: 'POST',
@@ -506,19 +514,26 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                 body: JSON.stringify({ action })
             });
             const data = await response.json();
-            console.log("Control response:", data);
+            if (!data.success) {
+                setState(s => ({ ...s, logs: [...s.logs, `⚠️ 요청 실패: ${data.error}`] }));
+            }
         } catch (e) {
             console.error("Control failed:", e);
+            setState(s => ({ ...s, logs: [...s.logs, `⚠️ 서버 통신 오류: ${String(e)}`] }));
         }
     };
 
     // Step 2 -> Step 3: Generate first reference image (or skip if disabled)
     const startGeneration = async () => {
         if (state.cuts.length === 0) {
-            alert(state.style === 'animation'
-                ? "이미지를 생성하기 전에 먼저 'AI 컷 나누기' 버튼을 눌러 스토리를 컷별로 나누어야 합니다."
-                : "생성할 스토리 정보가 없습니다. 이전 단계로 돌아가 스토리를 생성해 주세요."
-            );
+            if (state.style === 'animation' && state.editedStory.trim()) {
+                alert("⚠️ 컷 데이터가 없습니다!\n\n작성하신 스토리를 바탕으로 이미지를 생성하려면\n먼저 [AI 컷 나누기] 버튼을 눌러주세요.");
+            } else {
+                alert(state.style === 'animation'
+                    ? "이미지를 생성하기 전에 먼저 'AI 컷 나누기' 버튼을 눌러 스토리를 컷별로 나누어야 합니다."
+                    : "생성할 스토리 정보가 없습니다. 이전 단계로 돌아가 스토리를 생성해 주세요."
+                );
+            }
             return;
         }
 
@@ -543,6 +558,22 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                     setState(s => ({ ...s, currentImage: data.image, currentCutIndex: data.cutIndex || s.currentCutIndex }));
                 } else if (data.type === 'result') {
                     setState(s => ({ ...s, result: data.data }));
+                } else if (data.type === 'error') {
+                    if (data.message.includes('Generation Stopped') || data.message.includes('finish_early')) {
+                        // User requested stop -> Reset UI to Step 2 state
+                        setState(s => ({
+                            ...s,
+                            isProcessing: false,
+                            currentImage: null,
+                            currentCutIndex: 0,
+                            logs: [...s.logs, "🛑 생성이 초기화되었습니다."]
+                        }));
+                        alert("생성이 중단되었습니다. 이전 상태로 돌아갑니다.");
+                    } else {
+                        setState(s => ({ ...s, logs: [...s.logs, `❌ ERROR: ${data.message}`], isProcessing: false }));
+                        alert(`오류 발생: ${data.message}`);
+                    }
+                    eventSource.close();
                 } else if (data.type === 'done') {
                     eventSource.close();
                     fetchTitles();
@@ -554,22 +585,10 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
             };
         };
 
-        // 2. Direct Generation (If Reference Mode is OFF)
-        if (!currentUseRef) {
-            setState(s => ({
-                ...s,
-                step: 3,
-                logs: ['🎬 이미지 생성 시작 (참조 기능 비활성화)...'],
-                isProcessing: true,
-                referenceImage: null,
-                referenceConfirmed: true, // Auto-confirm
-                currentCutIndex: 1
-            }));
-
-            const cuts = state.mode === 'long' ? 100 : 20;
+        // Helper: Execute Queue Generation (Auto-Proceed)
+        const runGenerationQueue = (refImage: string | null) => {
             const modeStr = state.mode === 'long' ? 'Long Form (16:9)' : 'Short Form (9:16)';
 
-            // Queue Generation first to pass full story data
             fetch('http://localhost:3501/api/queue-generation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -577,17 +596,19 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                     mode: modeStr,
                     style: state.style,
                     topic: state.selectedDraft?.title || 'Story',
-                    cuts: state.cuts, // Pass full cuts data
+                    cuts: state.cuts,
                     concept: "기본 (Default)",
                     title: state.selectedTitle || state.selectedDraft?.title || '',
-                    characterPrompt: state.characterPrompt
+                    characterPrompt: state.characterPrompt,
+                    referenceImage: refImage || ""
                 })
             })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success && data.jobId) {
+                        // Start Streaming with jobId
                         const eventSource = new EventSource(
-                            `http://localhost:3501/api/stream?jobId=${data.jobId}`
+                            `http://localhost:3501/api/stream?jobId=${data.jobId}&referenceImage=${encodeURIComponent(refImage || '')}`
                         );
                         setupEventSource(eventSource);
                     } else {
@@ -597,35 +618,47 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                 .catch(e => {
                     setState(s => ({ ...s, logs: [...s.logs, `❌ 큐 요청 오류: ${String(e)}`], isProcessing: false }));
                 });
+        };
+
+        // 2. Direct Generation (Reference Mode OFF)
+        if (!currentUseRef) {
+            setState(s => ({
+                ...s,
+                step: 3,
+                logs: ['🎬 이미지 생성 시작 (참조 기능 비활성화)...'],
+                isProcessing: true,
+                referenceImage: null,
+                currentCutIndex: 1
+            }));
+            runGenerationQueue(null);
             return;
         }
 
-        // 3. User Uploaded Reference Logic (If already uploaded)
+        // 3. User Uploaded Reference Logic (If already uploaded) - Auto Start
         if (state.referenceImage) {
             setState(s => ({
                 ...s,
                 step: 3,
-                logs: ['🖼️ 사용자 업로드 이미지 사용...'],
-                isProcessing: false,
-                referenceConfirmed: false, // User must confirm
+                logs: ['🖼️ 사용자 업로드 이미지 감지... 바로 생성 시작!'],
+                isProcessing: true,
                 currentCutIndex: 1
             }));
+            runGenerationQueue(state.referenceImage);
             return;
         }
 
-        // 4. Generate Reference Image (First Cut Only)
+        // 4. Generate Reference Image (First Cut Only) -> Then Auto Start
         setState(s => ({
             ...s,
             step: 3,
             logs: ['🎬 첫 번째 이미지 생성 시작...'],
             isProcessing: true,
             referenceImage: null,
-            referenceConfirmed: false,
             currentCutIndex: 1
         }));
 
         try {
-            // Generate only the first image for confirmation
+            // Generate only the first image
             const res = await fetch('http://localhost:3501/api/workflow/generate-reference', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -639,14 +672,17 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
             const data = await res.json();
 
             if (data.success && data.imageUrl) {
+                // Auto-confirm and Proceed
                 setState(s => ({
                     ...s,
                     referenceImage: data.imageUrl,
-                    logs: [...s.logs, '✅ 첫 번째 이미지 생성 완료! 확인해주세요.'],
-                    isProcessing: false
+                    logs: [...s.logs, '✅ 첫 번째 이미지 생성 완료! 바로 이어서 생성합니다...'],
+                    isProcessing: true
                 }));
+                // Chain immediately
+                runGenerationQueue(data.imageUrl);
+
             } else {
-                // Error case: Stop and show error
                 setState(s => ({
                     ...s,
                     logs: [...s.logs, `❌ 오류: ${data.error || '이미지 생성 실패'}`],
@@ -654,7 +690,6 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                 }));
             }
         } catch (e) {
-            // Network/Server Error: Stop and show error
             setState(s => ({
                 ...s,
                 logs: [...s.logs, `❌ 서버 연결 오류: ${String(e)}`],
@@ -663,47 +698,7 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
         }
     };
 
-    // Regenerate reference image
-    const regenerateReferenceImage = () => {
-        setState(s => ({ ...s, referenceImage: null, isProcessing: true, logs: [...s.logs, '🔄 이미지 재생성 중...'] }));
-        startGeneration();
 
-    };
-
-    // Confirm reference and continue with remaining images
-    const confirmReferenceAndContinue = () => {
-        setState(s => ({
-            ...s,
-            referenceConfirmed: true,
-            isProcessing: true,
-            logs: [...s.logs, '✅ 참조 이미지 확정! 나머지 이미지 생성 시작...']
-        }));
-
-        const cuts = state.mode === 'long' ? 100 : 20;
-        const modeStr = state.mode === 'long' ? 'Long Form (16:9)' : 'Short Form (9:16)';
-
-        // Start generating remaining images with reference
-        const eventSource = new EventSource(
-            `http://localhost:3501/api/stream?mode=${encodeURIComponent(modeStr)}&topic=${encodeURIComponent(state.selectedDraft?.title || 'Story')}&cuts=${cuts}&concept=기본 (Default)&title=${encodeURIComponent(state.selectedTitle || state.selectedDraft?.title || '')}&referenceImage=${encodeURIComponent(state.referenceImage || '')}`
-        );
-
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'log') {
-                setState(s => ({ ...s, logs: [...s.logs, data.message], currentCutIndex: data.cutIndex || s.currentCutIndex }));
-            } else if (data.type === 'result') {
-                setState(s => ({ ...s, result: data.data }));
-            } else if (data.type === 'done') {
-                eventSource.close();
-                fetchTitles();
-            }
-        };
-
-        eventSource.onerror = () => {
-            eventSource.close();
-            setState(s => ({ ...s, isProcessing: false }));
-        };
-    };
 
     // Step 3 -> Step 4: Fetch titles
     const fetchTitles = async () => {
@@ -721,7 +716,18 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
     };
 
     // Step 4: Final complete
-    const completeWorkflow = () => {
+    const completeWorkflow = async () => {
+        if (state.selectedTitle && state.result?.folder_name) {
+            try {
+                await fetch(`http://localhost:3501/api/history/${state.result.folder_name}/title`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: state.selectedTitle })
+                });
+            } catch (e) {
+                console.error("Failed to update title:", e);
+            }
+        }
         onNavigate?.('history');
     };
 
@@ -731,7 +737,7 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
             step: 0, mode: 'long', style: 'photoreal', inputMode: 'category', category: '', customInput: '',
             drafts: [], selectedDraft: null, cuts: [], characterPrompt: '', editedStory: '',
             titles: [], selectedTitle: '', logs: [], isProcessing: false, loadingMessage: '', loadingDetail: '', streamingText: '',
-            referenceImage: null, referenceConfirmed: false, currentCutIndex: 0, result: null, currentImage: null
+            referenceImage: null, currentCutIndex: 0, result: null, currentImage: null, targetCuts: 100
         });
     };
 
@@ -958,54 +964,29 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                             </button>
                         </div>
 
-                        {/* Inline Streaming Text Display - Only for Draft Generation */}
-                        {state.isProcessing && state.loadingDetail === 'GET /api/workflow/drafts/parallel' && (
+                        {/* Inline Streaming Text Display - Draft Generation */}
+                        {state.isProcessing && state.loadingDetail.includes('/api/workflow/drafts/') && (
                             <motion.div
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="mt-6 bg-slate-900/80 border border-slate-700 rounded-2xl p-6 max-w-4xl mx-auto"
+                                className="mt-6 bg-slate-950 border border-slate-800 rounded-2xl p-6 max-w-4xl mx-auto shadow-2xl"
                             >
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
-                                        <Icon icon="solar:cpu-bolt-bold" className="text-xl text-white" />
+                                <div className="flex items-center gap-3 mb-4 border-b border-slate-800 pb-4">
+                                    <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center animate-pulse">
+                                        <Icon icon="solar:cpu-bolt-bold" className="text-xl text-blue-400" />
                                     </div>
                                     <div>
-                                        <h4 className="text-white font-bold">병렬 스트리밍</h4>
-                                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                            <span>10개 초안 동시 생성 중...</span>
+                                        <h4 className="text-white font-bold text-lg">AI가 초안을 생성하고 있습니다...</h4>
+                                        <div className="flex items-center gap-2 text-xs text-blue-400 font-mono mt-1">
+                                            <span className="animate-pulse">●</span>
+                                            <span>Batch Generation Mode (Single Request)</span>
                                         </div>
-                                    </div>
-                                    <div className="ml-auto text-sm font-bold text-blue-400">
-                                        {state.drafts.length}/10 완료
                                     </div>
                                 </div>
 
-                                {/* 2 columns x 5 rows Grid with Streaming Text */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((id) => {
-                                        const draft = state.drafts.find(d => d.id === id);
-                                        const streamText = streamingTexts[id] || '';
-                                        return (
-                                            <div
-                                                key={id}
-                                                className={`p-3 rounded-xl border transition-all ${draft
-                                                    ? 'bg-green-500/10 border-green-500/50'
-                                                    : streamText
-                                                        ? 'bg-blue-500/10 border-blue-500/50'
-                                                        : 'bg-slate-800/50 border-slate-700'
-                                                    }`}
-                                            >
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <span className={`text-xs font-bold ${draft ? 'text-green-400' : 'text-slate-500'}`}>#{id}</span>
-                                                    {draft && <Icon icon="solar:check-circle-bold" className="text-green-500" />}
-                                                </div>
-                                                <p className="text-xs text-slate-400 line-clamp-3 font-mono">
-                                                    {draft ? draft.title : streamText || '대기 중...'}
-                                                </p>
-                                            </div>
-                                        );
-                                    })}
+                                <div className="bg-black/50 rounded-xl p-4 font-mono text-xs text-emerald-400 h-64 overflow-y-auto custom-scrollbar leading-relaxed whitespace-pre-wrap border border-slate-800/50 relative">
+                                    {state.streamingText || "Waiting for stream..."}
+                                    <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse align-middle" />
                                 </div>
                             </motion.div>
                         )}
@@ -1153,27 +1134,25 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                         placeholder={state.style === 'animation' ? "1. 숲속을 걸어가는 주인공...\n2. 갑자기 나타난 사슴..." : ""}
                                         className="w-full h-[400px] bg-transparent p-4 text-slate-300 text-sm leading-relaxed focus:outline-none resize-none custom-scrollbar"
                                     />
-                                    {state.style === 'animation' && (
-                                        <div className="absolute bottom-4 right-4">
-                                            <button
-                                                onClick={parseScript}
-                                                disabled={state.isProcessing}
-                                                className={`px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all ${state.isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                            >
-                                                {state.isProcessing ? (
-                                                    <>
-                                                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                        분석 중...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Icon icon="solar:magic-stick-3-bold-duotone" />
-                                                        AI 컷 나누기
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    )}
+                                    <div className="absolute bottom-4 right-4">
+                                        <button
+                                            onClick={parseScript}
+                                            disabled={state.isProcessing}
+                                            className={`px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all ${state.isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            {state.isProcessing ? (
+                                                <>
+                                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    분석 중...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Icon icon="solar:magic-stick-3-bold-duotone" />
+                                                    AI 컷 나누기
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
 
 
@@ -1275,94 +1254,34 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                     state.step === 3 && (
                         <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
 
-                            {/* Reference Image Confirmation */}
-                            {state.referenceImage && !state.referenceConfirmed && (
-                                <div className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border border-purple-500/30 rounded-2xl p-6">
-                                    <div className="text-center mb-4">
-                                        <h2 className="text-2xl font-black text-white mb-2">🎭 주인공 이미지 확인</h2>
-                                        <p className="text-slate-400">첫 번째 이미지가 생성되었습니다. 이 이미지를 참조하여 나머지 씬을 생성합니다.</p>
-                                    </div>
-
-                                    <div className="flex gap-6 items-start">
-                                        {/* Reference Image Preview */}
-                                        <div className="flex-shrink-0">
-                                            <div className="w-64 h-64 bg-slate-800 rounded-xl overflow-hidden border-4 border-purple-500/50">
-                                                <img
-                                                    src={state.referenceImage}
-                                                    alt="Reference"
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            </div>
-                                            <p className="text-center text-xs text-purple-400 mt-2">컷 #1 - 주인공 참조 이미지</p>
-                                        </div>
-
-                                        {/* Controls */}
-                                        <div className="flex-1 space-y-4">
-                                            <div className="bg-slate-900/50 rounded-xl p-4">
-                                                <h3 className="text-white font-bold mb-2">📌 이 이미지가 참조로 사용됩니다</h3>
-                                                <ul className="text-sm text-slate-400 space-y-1">
-                                                    <li>• 모든 씬에서 주인공의 얼굴/외형 일관성 유지</li>
-                                                    <li>• IP-Adapter 기술로 동일 인물 재현</li>
-                                                    <li>• 마음에 들지 않으면 재생성 가능</li>
-                                                </ul>
-                                            </div>
-
-                                            <div className="flex gap-3">
-                                                <button
-                                                    onClick={regenerateReferenceImage}
-                                                    disabled={state.isProcessing}
-                                                    className="flex-1 px-6 py-4 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-600/50 disabled:opacity-50"
-                                                >
-                                                    <Icon icon="solar:refresh-bold" className="text-xl" />
-                                                    재생성
-                                                </button>
-                                                <button
-                                                    onClick={confirmReferenceAndContinue}
-                                                    disabled={state.isProcessing}
-                                                    className="flex-1 px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                                                >
-                                                    <Icon icon="solar:check-circle-bold" className="text-xl" />
-                                                    이대로 진행
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                            {/* Reference Image Confirmation - REMOVED (Auto-confirm logic implemented) */}
 
                             {/* Generating remaining images */}
-                            {(state.referenceConfirmed || !state.referenceImage) && (
-                                <>
-                                    <div className="text-center mb-4">
-                                        <h2 className="text-2xl font-black text-white mb-2">
-                                            {state.referenceConfirmed ? '🎬 나머지 이미지 생성 중...' : '🎬 첫 번째 이미지 생성 중...'}
-                                        </h2>
-                                        <p className="text-slate-400">
-                                            {state.referenceConfirmed
-                                                ? `참조 이미지 기반으로 ${state.mode === 'long' ? 100 : 20}컷을 생성합니다.`
-                                                : '주인공 참조 이미지를 생성하고 있습니다...'
-                                            }
-                                        </p>
-                                    </div>
 
-                                    {/* Progress Bar */}
-                                    {state.referenceConfirmed && (
-                                        <div className="bg-slate-900/50 rounded-xl p-4">
-                                            <div className="flex justify-between text-xs text-slate-400 mb-2">
-                                                <span>진행률</span>
-                                                <span>{state.currentCutIndex} / {state.mode === 'long' ? 100 : 20} 컷</span>
-                                            </div>
-                                            <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-                                                <motion.div
-                                                    className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${(state.currentCutIndex / (state.mode === 'long' ? 100 : 20)) * 100}%` }}
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                            {/* Generating remaining images */}
+                            <div className="text-center mb-4">
+                                <h2 className="text-2xl font-black text-white mb-2">
+                                    🎬 이미지 생성 중...
+                                </h2>
+                                <p className="text-slate-400">
+                                    AI가 설정된 내용을 바탕으로 이미지를 생성하고 있습니다.
+                                </p>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="bg-slate-900/50 rounded-xl p-4">
+                                <div className="flex justify-between text-xs text-slate-400 mb-2">
+                                    <span>진행률</span>
+                                    <span>{state.currentCutIndex} / {state.mode === 'long' ? 100 : 20} 컷</span>
+                                </div>
+                                <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                                    <motion.div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${(state.currentCutIndex / (state.mode === 'long' ? 100 : 20)) * 100}%` }}
+                                    />
+                                </div>
+                            </div>
 
                             {/* [CONTROL] Buttons: Only show during Image Generation (Step 3+) and Processing */}
                             {state.step >= 3 && state.isProcessing && (
@@ -1415,7 +1334,7 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                         </h3>
                                         <div className="rounded-xl overflow-hidden border border-slate-700 aspect-video bg-black relative">
                                             <img
-                                                src={state.currentImage}
+                                                src={state.currentImage.startsWith('http') || state.currentImage.startsWith('data:') ? state.currentImage : `http://localhost:3501${state.currentImage}`}
                                                 alt="Live Preview"
                                                 className="w-full h-full object-contain"
                                             />
@@ -1442,13 +1361,13 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                         <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                             <div className="text-center mb-6">
                                 <h2 className="text-2xl font-black text-white mb-2">🏆 제목 선택</h2>
-                                <p className="text-slate-400">AI가 제안하는 영어 제목 중 하나를 선택하세요. 폴더명에 자동 적용됩니다.</p>
+                                <p className="text-slate-400">AI가 제안하는 한국어 제목 중 하나를 선택하세요. 폴더명에 자동 적용됩니다.</p>
                             </div>
 
                             {state.result && (
                                 <div className="flex justify-center mb-6">
                                     <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 flex items-center gap-4">
-                                        <img src={state.result.image_url} alt="Preview" className="w-24 h-16 rounded-lg object-cover" />
+                                        <img src={`http://localhost:3501${state.result.image_url}`} alt="Preview" className="w-24 h-16 rounded-lg object-cover" />
                                         <div>
                                             <p className="text-white font-bold">{state.result.title}</p>
                                             <p className="text-slate-400 text-xs">{state.result.cuts}컷 · {state.result.resolution}</p>
@@ -1734,6 +1653,18 @@ export default function WorkflowController({ onNavigate }: { onNavigate?: (tab: 
                                         onChange={(e) => setEditingDraft({ ...editingDraft, summary: e.target.value })}
                                         className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-3 text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all h-64 resize-none leading-relaxed"
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">생성할 컷 수</label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            value={state.targetCuts}
+                                            onChange={(e) => setState(s => ({ ...s, targetCuts: parseInt(e.target.value) || 0 }))}
+                                            className="w-32 bg-slate-800 border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-bold text-lg"
+                                        />
+                                        <span className="text-slate-500 text-sm">컷 (기본: Long 100 / Short 20)</span>
+                                    </div>
                                 </div>
                             </div>
 
